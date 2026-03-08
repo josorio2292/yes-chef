@@ -141,23 +141,43 @@ flowchart TB
 ### Catalog Layer
 
 - **CatalogProviderInterface:**
-  - Given the system needs supplier data,
-  - When the Catalog Service loads or queries a supplier,
-  - Then it uses the Provider interface: `load_catalog()` returns all items (item_number, description, uom, cost_per_case), and `get_price(item_number)` returns the current price and UOM. Each provider is a simple data adapter. The prototype implements one provider (Sysco CSV). Adding a provider means implementing these two methods — no changes to the Catalog Service or agents.
+  - Given the system needs data from a supplier source,
+  - When the Catalog Service ingests or prices from a provider,
+  - Then it uses the Provider interface: `load_catalog()` loads all items from that source and returns them normalized to `CatalogRecord` shape (source_item_id, provider, description, unit_of_measure, cost_per_case, category, brand, source_metadata). `get_price(source_item_id)` returns a fresh price and UOM directly from the source. Each provider is a self-contained data adapter — it knows its own schema and normalizes to `CatalogRecord`. The prototype implements one provider (Sysco CSV). Adding a provider means implementing `load_catalog()` and `get_price()` — no other code changes.
 
 - **CatalogServiceInterface:**
-  - Given the system needs to search across all providers,
+  - Given the system needs to search across all providers or price an item,
   - When any component queries the catalog,
-  - Then it uses the Catalog Service — a unified API that sits above all providers:
-    - `search(query: str) → list[CatalogCandidate]` — embeds the query, runs cosine similarity against all catalog embeddings, returns top-5 candidates ranked by score. Each candidate has: item_number, description, uom, provider, similarity_score.
-    - `get_price(item_number: str, provider: str) → PriceResult` — delegates to the correct provider, returns cost_per_case and uom.
-    - `embed_catalog()` — loads all providers, embeds all descriptions, stores in Postgres. Called once at startup.
+  - Then it uses the Catalog Service — a unified API over the `catalog_items` pgvector table:
+    - `search(query: str, top_k: int = 5) → list[CatalogCandidate]` — embeds the query, executes a pgvector cosine distance SQL query (`ORDER BY embedding <=> $1 LIMIT top_k`), and returns enriched candidates with description, unit_of_measure, cost_per_case, provider, and similarity_score directly from the table. No post-search provider lookup is performed.
+    - `get_price(source_item_id: str, provider: str) → PriceResult` — delegates to the named provider for a fresh price. Used by the cache fast path and on-demand pricing.
+    - `ingest(provider_name: str) → None` — the ETL pipeline: loads the provider via `load_catalog()`, embeds all descriptions in batches, soft-deletes existing rows for that provider (`is_active = FALSE`), then upserts new rows into `catalog_items` with `is_active = TRUE`. Replaces `embed_catalog()`. Can be run per-provider at any time without affecting other providers.
+    - `has_embeddings() → bool` — async; returns True if at least one active row exists in `catalog_items`.
   - The matching agent interacts ONLY with the Catalog Service. It never knows which provider data came from — the Catalog Service handles routing.
 
-- **EmbeddingIndex:**
-  - Given the Catalog Service has loaded items from all providers,
-  - When the application starts,
-  - Then it embeds every catalog item description using an embedding model (text-embedding-3-small). Embeddings are stored in Postgres. For the prototype (565 items), this is a single operation at startup — no incremental tracking needed. If the application restarts, embeddings are reloaded from Postgres; if the catalog changes, `embed_catalog()` re-embeds everything.
+- **UnifiedCatalogIndex:**
+  - Given providers have been ingested,
+  - When the application searches the catalog,
+  - Then all items from all providers live in a single `catalog_items` Postgres table with a `vector(1536)` embedding column, a pgvector HNSW index (cosine ops), metadata columns (unit_of_measure, cost_per_case, category, brand, source_metadata JSONB), and an `is_active` flag for soft deletes. There is no in-memory embedding store. Items are not re-embedded at startup — embeddings persist in the database across restarts. A provider is re-ingested by running `ingest(provider_name)`, which soft-deletes and replaces only that provider's rows.
+
+**Ingestion pipeline:**
+
+```mermaid
+flowchart LR
+    CSV["Provider CSV / API"] -->|load_catalog| RECORDS["CatalogRecord[]"]
+    RECORDS -->|embed descriptions| EMBED["vector(1536) per item"]
+    EMBED -->|upsert + soft delete| TABLE[("catalog_items\n(pgvector)")]
+```
+
+**Search flow:**
+
+```mermaid
+flowchart LR
+    AGENT["Agent\nsearch_catalog(query)"] -->|embed query| VEC["query vector"]
+    VEC -->|pgvector SQL\nORDER BY <=> LIMIT 5| TABLE[("catalog_items")]
+    TABLE -->|rows with UOM, price, category| CAND["CatalogCandidate[]"]
+    CAND --> AGENT
+```
 
 ### Per-Item Processing
 
@@ -189,16 +209,16 @@ Each menu item moves through two steps with a checkpoint after each.
 - **CacheHitFastPath:**
   - Given an ingredient name,
   - When the orchestrator finds a valid cache entry (Postgres lookup, normalized key),
-  - Then it resolves the ingredient in deterministic code — no LLM. It calls `catalog_service.get_price()` for the cached item and builds an `IngredientMatch` in Python using the cached cost data. If `get_price()` fails (item no longer exists), the cache entry is invalidated and the ingredient falls through to the matching agent.
+  - Then it resolves the ingredient in deterministic code — no LLM. The cache entry stores `source_item_id` and `provider` (not a price). The fast path calls `catalog_service.get_price(source_item_id, provider)` to fetch a fresh price from the provider, then builds an `IngredientMatch` in Python. If `get_price()` fails (item no longer exists in the provider), the cache entry is invalidated and the ingredient falls through to the matching agent. Prices are always fetched fresh — the `catalog_items` table price is not used for fast-path resolution.
 
 - **MatchingAgentPath:**
   - Given an ingredient has no valid cache entry,
   - When the orchestrator invokes the matching agent (PydanticAI),
   - Then the agent runs with the ingredient name and serving quantity. The LLM decides the tool-call sequence:
-    1. `search_catalog(query)` — gets top-5 candidates from embedding search via Catalog Service.
-    2. **Evaluate** — LLM reasons about which candidate best matches. Considers semantic fit, quality tier, product category. This is the core AI judgment.
-    3. `get_price(item_number, provider)` — tool fetches price, parses UOM, computes per-serving cost in Python.
-    4. `update_cache(ingredient_name, item_number, source, provider)` — persists mapping via Postgres upsert. Non-fatal on failure.
+    1. `search_catalog(query)` — gets top-5 enriched candidates from pgvector search via Catalog Service. Each candidate includes description, unit_of_measure, cost_per_case, category, brand, provider, and similarity_score — all from the `catalog_items` table, no additional provider call needed.
+    2. **Evaluate** — LLM reasons about which candidate best matches. Considers semantic fit, quality tier, product category, UOM compatibility. This is the core AI judgment.
+    3. `get_price(source_item_id, provider)` — tool fetches a fresh price from the provider, interprets UOM, computes per-serving cost.
+    4. `update_cache(ingredient_name, source_item_id, source, provider)` — persists mapping via Postgres upsert. Non-fatal on failure.
     5. Returns `IngredientMatch` structured output.
   - If no candidate is acceptable: source `"not_available"`, null cost. The agent caches `not_available` mappings too to prevent redundant searches.
 
@@ -219,7 +239,7 @@ Each menu item moves through two steps with a checkpoint after each.
 ### Ingredient Cache
 
 - **Global Cache:**
-  - The cache is stored in Postgres and shared across ALL jobs. Key: normalized ingredient name (lowercase, trimmed). Value: item_number, source, provider. No prices cached — prices are always fetched fresh. A mapping written during job 1 is available to job 2, eliminating redundant LLM calls for common ingredients.
+  - The cache is stored in Postgres and shared across ALL jobs. Key: normalized ingredient name (lowercase, trimmed). Value: source_item_id, source, provider. No prices cached — prices are always fetched fresh. A mapping written during job 1 is available to job 2, eliminating redundant LLM calls for common ingredients.
   - Concurrent writes from parallel items are safe — Postgres upsert with temperature-0 LLM reasoning produces equivalent results regardless of write ordering.
 
 ### Persistence & Resumability
@@ -279,20 +299,59 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 - Each item: name, description, dietary_notes (nullable), service_style (appetizers only)
 - Categories: appetizers, main_plates, desserts, cocktails
 
+**CatalogRecord (what providers return after normalization):**
+- source_item_id: str — the provider's native identifier (e.g., Sysco item number, US Foods SKU)
+- provider: str — identifier matching the registered provider name (e.g., "sysco", "us_foods")
+- description: str — the text that gets embedded
+- unit_of_measure: str — e.g., "20/8 OZ", "6/1 GAL"
+- cost_per_case: float
+- category: str | None — e.g., "produce", "dairy", "meat"
+- brand: str | None
+- source_metadata: dict — raw source-specific fields preserved as-is (e.g., contract item number, AASIS number, brand column)
+
 **Catalog Provider Interface:**
-- `load_catalog() → list[CatalogItem]` — each with: item_number (str), description (str), unit_of_measure (str), cost_per_case (float)
-- `get_price(item_number: str) → PriceResult` — cost_per_case (float), unit_of_measure (str). Raises if item not found.
+- `name: str` — provider identifier; must be unique across all registered providers
+- `load_catalog() → list[CatalogRecord]` — load all items from the source, normalize to CatalogRecord, return. Malformed rows skipped with a warning.
+- `get_price(source_item_id: str) → PriceResult` — fresh price lookup from the source. Raises ItemNotFoundError if the item does not exist.
 
 **Catalog Service Interface:**
-- `search(query: str) → list[CatalogCandidate]` — each with: item_number (str), description (str), unit_of_measure (str), provider (str), similarity_score (float). Top-5 by cosine similarity.
-- `get_price(item_number: str, provider: str) → PriceResult` — delegates to provider. Raises if item/provider not found.
-- `embed_catalog() → None` — loads all providers, embeds all descriptions, stores in Postgres.
-- `load_embeddings() → None` — loads previously-stored embeddings from Postgres without calling the embedding API. Startup calls `load_embeddings()` if embeddings exist; calls `embed_catalog()` only if the table is empty.
+- `search(query: str, top_k: int = 5) → list[CatalogCandidate]` — embeds the query, runs pgvector cosine distance SQL against `catalog_items WHERE is_active = TRUE`, returns top-k results enriched with all metadata from the table. No post-search provider call.
+- `get_price(source_item_id: str, provider: str) → PriceResult` — delegates to the named provider. Raises ValueError for unknown provider. Raises ItemNotFoundError for unknown item.
+- `ingest(provider_name: str) → None` — ETL: load_catalog() → embed descriptions in batches → soft-delete existing provider rows → upsert new rows into catalog_items with is_active=TRUE.
+- `has_embeddings() → bool` — async; returns True if catalog_items contains at least one row with is_active=TRUE.
+
+**CatalogCandidate (search result):**
+- source_item_id: str
+- description: str
+- unit_of_measure: str
+- cost_per_case: float
+- provider: str
+- similarity_score: float
+- category: str | None
+- brand: str | None
+
+**catalog_items table (pgvector):**
+- id: UUID PRIMARY KEY
+- source_item_id: VARCHAR NOT NULL — provider's native item identifier
+- provider: VARCHAR NOT NULL — provider name
+- description: VARCHAR NOT NULL — embedded text
+- unit_of_measure: VARCHAR NOT NULL
+- cost_per_case: FLOAT NOT NULL
+- category: VARCHAR (nullable)
+- brand: VARCHAR (nullable)
+- source_metadata: JSONB (nullable) — raw source-specific fields
+- embedding: vector(1536) NOT NULL
+- ingested_at: TIMESTAMPTZ NOT NULL DEFAULT NOW()
+- is_active: BOOLEAN NOT NULL DEFAULT TRUE
+- UNIQUE(provider, source_item_id) — one row per item per provider
+- HNSW index on embedding column with vector_cosine_ops
+- Index on provider
+- Partial index on is_active WHERE is_active = TRUE
 
 **IngredientMatch (Pydantic — agent output OR fast-path built):**
 - name: str
 - catalog_item: str | None (matched catalog description)
-- sysco_item_number: str | None
+- source_item_id: str | None — provider's native item identifier
 - provider: str | None
 - source: "sysco_catalog" | "estimated" | "not_available"
 - unit_cost: float | None (per-serving cost)
@@ -304,7 +363,7 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 
 **Ingredient Cache (Postgres, global):**
 - key: normalized ingredient name (lowercase, trimmed)
-- value: item_number (str | None), source, provider (str)
+- value: source_item_id (str | None), source, provider (str)
 - No prices. Entries invalidated when `get_price()` fails on a cached item.
 
 **Checkpoint State:**
@@ -317,7 +376,7 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 - quote_id, event, date, venue, generated_at (ISO 8601 string — to be added to quote_schema.json during implementation)
 - line_items: list per menu item:
   - item_name, category
-  - ingredients: list per ingredient: name, quantity, unit_cost, source, sysco_item_number
+  - ingredients: list per ingredient: name, quantity, unit_cost, source, source_item_id
   - ingredient_cost_per_unit: float (sum of non-null unit_costs)
 
 **Job Status:**
@@ -344,7 +403,7 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 - SQLAlchemy (latest, async) + Alembic for persistence and migrations. asyncpg driver.
 - Pydantic models for API/agent contracts; SQLAlchemy models for persistence. Explicit conversion between them.
 - Two PydanticAI agents: decomposition (structured extraction) and matching (tools). Cache hits bypass agents entirely.
-- Embedding: text-embedding-3-small via OpenRouter. Computed at startup, stored in Postgres.
+- Embedding: text-embedding-3-small via OpenRouter. Stored in Postgres (`catalog_items` pgvector table). Embeddings persist across restarts; startup does not re-embed. Searched via SQL (`ORDER BY embedding <=> $1`).
 - Frontend: React (latest). SSE consumed via native `EventSource` API (not Vercel AI SDK — custom SSE events don't fit AI SDK wire format). Design guided by the `interface-design` skill — domain-driven design system stored in `.interface-design/system.md` for consistency across views (job submission, progress tracking, quote display).
 - Ruff for linting and formatting (replaces black, flake8, isort). PEP 8 as the style reference. Configured in `pyproject.toml`. Run `ruff check .` and `ruff format .` before every commit.
 - CLI-first. TDD non-negotiable.
@@ -360,9 +419,9 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 - Embedding: text-embedding-3-small. All catalog items embedded at startup.
 
 ### Data & Persistence
-- Postgres (Render free tier / Docker local) for everything: jobs, checkpoints, cache, embeddings.
-- Catalog: two-tier. Catalog Service (unified API + embeddings) → Provider (data adapter). Prototype: one provider (Sysco CSV). Adding a provider = implementing `load_catalog()` + `get_price()`.
-- Cache: global, cross-job. No prices cached.
+- Postgres (Render free tier / Docker local) for everything: jobs, checkpoints, cache, and catalog.
+- Catalog: two-tier. Catalog Service (unified API + pgvector search) → Provider (data adapter). `catalog_items` table stores embeddings + all searchable metadata (description, UOM, cost, category, brand, source_metadata JSONB) with a pgvector HNSW index. Prototype: one provider (Sysco CSV). Adding a provider = implementing `load_catalog()` + `get_price()` and running `ingest(provider_name)`.
+- Cache: global, cross-job. No prices cached. Cache entries use `source_item_id`.
 
 ### Deployment
 - Render: API (web service), React (static site), Postgres (managed). All free tier.
@@ -375,7 +434,6 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 
 ### Production Path (documented, not built)
 - Temporal.io migration (each step = activity).
-- pgvector for Postgres-native vector search.
 - Per-ingredient checkpointing within resolve step.
 
 ## Error Cases
@@ -399,7 +457,6 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 - No historical pricing or price trends.
 - No guest-count total projection — per-serving only.
 - No Temporal.io — documented as production path.
-- No pgvector — cosine similarity in application code.
 - No per-ingredient checkpointing — production improvement.
 
 ## Plan
@@ -408,10 +465,10 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 
 ### Components Affected
 
-1. **Persistence layer** — Postgres schema for jobs, work items, checkpoints, ingredient cache, and catalog embeddings.
-2. **Catalog layer** — Provider interface (Sysco CSV adapter) and Catalog Service (unified API with embedding search and pricing).
+1. **Persistence layer** — Postgres schema for jobs, work items, checkpoints, ingredient cache, and the unified `catalog_items` table (pgvector, metadata, soft deletes).
+2. **Catalog layer** — Provider interface (returning `CatalogRecord`), Catalog Service (pgvector search, `ingest()` ETL, provider-delegated pricing), Sysco CSV adapter.
 3. **Decomposition engine** — Exa recipe retrieval + PydanticAI decomposition agent for structured ingredient extraction.
-4. **Resolution engine** — Cache-hit fast path + PydanticAI matching agent with tools (search_catalog, get_price, update_cache).
+4. **Resolution engine** — Cache-hit fast path + PydanticAI matching agent with tools (search_catalog, get_price, update_cache). `IngredientMatch` uses `source_item_id`.
 5. **Orchestrator** — Sequential job runner with checkpointing, then concurrency.
 6. **API layer** — Minimal FastAPI: submit job, get status, get quote, SSE.
 7. **Frontend** — React with three views (Submit, Kitchen, The Pass) per `.interface-design/system.md`.
@@ -420,39 +477,40 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 
 **Foundation (build and prove first):**
 
-1. **Persistence layer** — must come first. Every other component reads from or writes to Postgres. The schema defines the data contracts that all other components depend on.
+1. **Persistence layer** — must come first. Every other component reads from or writes to Postgres. The schema defines the data contracts all other components depend on. Includes `catalog_items` with all metadata columns, pgvector HNSW index, `is_active` soft-delete flag, and the updated `ingredient_cache` table using `source_item_id` instead of `sysco_item_number`.
 
-2. **Catalog layer** — depends on persistence (embeddings stored in Postgres). Provider loads CSV, Catalog Service embeds and searches. Prove that embedding search returns sensible candidates for real ingredients against the real Sysco catalog. Empirically validated: text-embedding-3-small scores 0.61 avg for matched ingredients vs 0.37 avg for unmatched — clear 0.24 separation. 14/14 correct top-1 matches. No preprocessing needed.
+2. **Catalog layer** — depends on persistence (`catalog_items` table). Provider loads CSV and returns `CatalogRecord`. Catalog Service `ingest()` normalizes, embeds in batches, and upserts. `search()` queries pgvector directly and returns enriched `CatalogCandidate` with UOM, price, category from the table. Empirically validated: text-embedding-3-small scores 0.61 avg for matched ingredients vs 0.37 avg for unmatched — clear 0.24 separation. 14/14 correct top-1 matches.
 
-3. **Decomposition engine** — depends on persistence (writes checkpoints) but NOT on the catalog layer. Can be built and tested independently with mocked Exa responses. Produces ingredient lists that the resolution engine consumes.
+3. **Decomposition engine** — depends on persistence (writes checkpoints) but NOT on the catalog layer. Can be built and tested independently with mocked Exa responses.
 
-4. **Resolution engine** — depends on persistence (reads/writes cache, writes checkpoints) AND catalog layer (search, get_price). The cache-hit fast path and matching agent both need the Catalog Service. Two code paths (fast path + agent), three agent tools, source classification logic.
+4. **Resolution engine** — depends on persistence (reads/writes cache, writes checkpoints) AND catalog layer (search, get_price). Uses `source_item_id` throughout. The cache fast path calls `get_price(source_item_id, provider)` for fresh pricing. The matching agent receives enriched candidates from `search()`.
 
 **Wiring (connect the foundation):**
 
-5. **Orchestrator** — depends on persistence, decomposition engine, and resolution engine. Wire the two engines with step sequencing and checkpointing. Start sequential (one item at a time). Add concurrency after the pipeline works end-to-end.
+5. **Orchestrator** — depends on persistence, decomposition engine, and resolution engine.
 
-6. **API layer** — depends on orchestrator. Minimal endpoints: submit job, poll status, get quote. SSE after polling works.
+6. **API layer** — depends on orchestrator.
 
-7. **Frontend** — depends on API layer. Three views following `.interface-design/system.md`. Submit form, progress display (polling first), quote view.
+7. **Frontend** — depends on API layer. Quote view uses `source_item_id` in ingredient tables.
 
 ### Risk Areas
 
 All identified risks have been derisked:
 
-- **Embedding search quality** — empirically validated. 14/14 correct top-1 matches. 0.24 avg score separation between matched (0.61) and unmatched (0.37) ingredients. No preprocessing needed.
-- **UOM parsing** — derisked by design. The matching agent interprets UOM strings (e.g., "20/8 OZ" → 20 pieces × 8 oz) as part of its reasoning over catalog data. LLM handles the semi-structured format; structured output validates the arithmetic. No regex module needed.
-- **Tool calling reliability** — derisked by design. PydanticAI structured output + prompt design + validation retry on malformed responses. Not architecture-level risk.
+- **Embedding search quality** — empirically validated. 14/14 correct top-1 matches. 0.24 avg score separation.
+- **UOM parsing** — derisked by design. The matching agent interprets UOM strings as part of its reasoning. No regex module needed.
+- **Tool calling reliability** — derisked by design. PydanticAI structured output + prompt design + validation retry.
+- **Migration safety** — the table rename/restructure is a breaking schema change. For the prototype (local Docker), stopping the API during migration is acceptable.
 
 ### Dependencies Map
 
 - **CatalogProviderInterface** → independent
-- **CatalogServiceInterface** → depends on: CatalogProviderInterface, EmbeddingIndex
-- **EmbeddingIndex** → depends on: CatalogProviderInterface, persistence
+- **CatalogServiceInterface** → depends on: CatalogProviderInterface, catalog_items table
+- **UnifiedCatalogIndex** → depends on: CatalogProviderInterface, persistence (catalog_items)
 - **RecipeRetrieval** → independent (Exa only)
 - **IngredientExtraction** → depends on: RecipeRetrieval
 - **DecompositionCheckpoint** → depends on: IngredientExtraction, persistence
-- **CacheHitFastPath** → depends on: Global Cache, CatalogServiceInterface
+- **CacheHitFastPath** → depends on: Global Cache (source_item_id), CatalogServiceInterface
 - **MatchingAgentPath** → depends on: CatalogServiceInterface, Global Cache
 - **CostRollup** → depends on: all ingredients resolved
 - **Orchestrator behaviors** (Checkpointing, Resumability, AsyncOrchestration) → depends on: both engines + persistence
