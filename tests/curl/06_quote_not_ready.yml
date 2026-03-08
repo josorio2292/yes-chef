@@ -1,0 +1,29 @@
+- name: Submit job for quote timing test
+  request:
+    method: POST
+    url: /jobs
+    headers:
+      Content-Type: application/json
+    body:
+      event: "Quote Timing Test Event"
+      date: "2025-06-01"
+      venue: "Test Venue"
+      guest_count_estimate: 10
+      categories:
+        appetizers:
+          - name: "Spring Rolls"
+            description: "Crispy vegetable spring rolls"
+            service_style: "passed"
+  expect:
+    status: 201
+    body:
+      job_id: any_uuid
+      status: pending
+
+- name: Get quote before completion
+  depends_on: Submit job for quote timing test
+  request:
+    method: GET
+    url: /jobs/${prev.job_id}/quote
+  expect:
+    status: 409

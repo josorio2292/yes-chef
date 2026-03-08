@@ -149,6 +149,7 @@ def run_curl(
     url: str,
     headers: dict[str, str] | None,
     body: Any | None,
+    max_time: int = 10,
 ) -> tuple[int, dict[str, Any] | str | None, dict[str, str]]:
     """
     Execute a curl request.
@@ -160,6 +161,9 @@ def run_curl(
         "curl",
         "--silent",
         "--show-error",
+        "--include",  # include response headers in output
+        "--max-time",
+        str(max_time),
         "--write-out",
         "\n__STATUS__%{http_code}",
         "--request",
@@ -184,8 +188,32 @@ def run_curl(
 
     # Split off our sentinel status line
     parts = raw.rsplit("\n__STATUS__", 1)
-    body_text = parts[0].strip()
+    full_text = parts[0].strip()
     status_code = int(parts[1].strip()) if len(parts) == 2 else 0
+
+    # Split headers from body: headers end at first blank line
+    response_headers: dict[str, str] = {}
+    body_text = full_text
+    if "\r\n\r\n" in full_text:
+        header_section, body_text = full_text.split("\r\n\r\n", 1)
+        body_text = body_text.strip()
+        for line in header_section.splitlines()[1:]:  # skip the HTTP status line
+            if ":" in line:
+                hname, _, hval = line.partition(":")
+                response_headers[hname.strip().lower()] = hval.strip()
+    elif "\n\n" in full_text:
+        header_section, body_text = full_text.split("\n\n", 1)
+        body_text = body_text.strip()
+        for line in header_section.splitlines()[1:]:
+            if ":" in line:
+                hname, _, hval = line.partition(":")
+                response_headers[hname.strip().lower()] = hval.strip()
+
+    # Normalise content-type: strip charset/boundary suffix for comparison
+    if "content-type" in response_headers:
+        response_headers["content-type"] = (
+            response_headers["content-type"].split(";")[0].strip()
+        )
 
     # Parse response body
     response_body: dict[str, Any] | str | None
@@ -197,7 +225,7 @@ def run_curl(
     else:
         response_body = None
 
-    return status_code, response_body, {}
+    return status_code, response_body, response_headers
 
 
 # ── Test runner ───────────────────────────────────────────────────────────────
