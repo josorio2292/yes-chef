@@ -607,11 +607,55 @@ All identified risks have been derisked:
 - **Acceptance condition:** A React page showing the final quote. Summary header with event name, total items, total cost. Expandable line item cards — collapsed shows item name + cost, expanded shows ingredient table with name, quantity, unit cost, source badge (Catalog/Estimated/86'd), catalog item number. Export as JSON button. Prices use tabular-nums monospace, right-aligned.
 - **Depends on:** Tasks 8, 10
 
-### Task 13: Deploy to Render
+### Task 14: Schema migration — catalog_items table and source_item_id rename
+
+- **Spec behaviors satisfied:** UnifiedCatalogIndex
+- **Acceptance condition:** A new Alembic migration transforms the schema:
+  1. Renames `catalog_embeddings` table → `catalog_items`
+  2. Renames `catalog_items.item_number` column → `source_item_id`
+  3. Adds columns: `unit_of_measure VARCHAR NOT NULL DEFAULT ''`, `cost_per_case FLOAT NOT NULL DEFAULT 0`, `category VARCHAR`, `brand VARCHAR`, `source_metadata JSONB`, `ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`, `is_active BOOLEAN NOT NULL DEFAULT TRUE`
+  4. Drops old unique index on `item_number`, adds composite unique on `(provider, source_item_id)`
+  5. Adds partial index on `is_active WHERE is_active = TRUE`
+  6. Renames `ingredient_cache.sysco_item_number` column → `source_item_id`
+  7. All statements are idempotent (`IF NOT EXISTS`, `IF EXISTS`, `DO $$ ... EXCEPTION WHEN ...`)
+  SQLAlchemy model `CatalogEmbedding` is renamed to `CatalogItem` with all new columns. `IngredientCache.sysco_item_number` is renamed to `source_item_id`. Tests verify: (1) `CatalogItem` model can be inserted with all fields including source_metadata JSONB, (2) `IngredientCache` model uses `source_item_id`, (3) composite unique constraint on `(provider, source_item_id)` prevents duplicates.
+- **Depends on:** Task 1
+
+### Task 15: Provider contract — CatalogRecord and SyscoCsvProvider update
+
+- **Spec behaviors satisfied:** CatalogProviderInterface
+- **Acceptance condition:** `CatalogItem` dataclass is replaced by `CatalogRecord` with fields: source_item_id, provider, description, unit_of_measure, cost_per_case, category, brand, source_metadata. `SyscoCsvProvider.load_catalog()` returns `list[CatalogRecord]` with `source_item_id` (was `item_number`), `provider="sysco"`, and `source_metadata` preserving raw CSV fields (e.g., AASIS number, contract item number). `SyscoCsvProvider.get_price(source_item_id)` replaces `get_price(item_number)`. Provider has a `name: str` property returning `"sysco"`. Tests verify: (1) `load_catalog()` returns `CatalogRecord` instances with all fields populated, (2) `source_metadata` contains raw CSV fields, (3) `get_price()` works with `source_item_id` parameter, (4) malformed CSV rows are skipped with warning.
+- **Depends on:** Task 14
+
+### Task 16: Catalog Service — ingest(), enriched search(), remove embed_catalog/load_embeddings
+
+- **Spec behaviors satisfied:** CatalogServiceInterface, UnifiedCatalogIndex
+- **Acceptance condition:** `embed_catalog()` is replaced by `ingest(provider_name)` which: loads the provider, embeds all descriptions in batches, soft-deletes existing rows for that provider (`is_active = FALSE`), upserts new rows into `catalog_items` with all metadata and `is_active = TRUE`. `load_embeddings()` is removed (embeddings persist in DB). `search()` returns `CatalogCandidate` with enriched fields: source_item_id, description, unit_of_measure, cost_per_case, provider, similarity_score, category, brand — all read from `catalog_items` table in one query, no post-search provider lookup. `CatalogCandidate.item_number` is renamed to `source_item_id`. `get_price(source_item_id, provider)` replaces `get_price(item_number, provider)`. `has_embeddings()` queries `catalog_items WHERE is_active = TRUE`. Tests verify: (1) `ingest("sysco")` populates `catalog_items` with all metadata columns, (2) re-ingestion soft-deletes old rows and inserts new ones, (3) `search()` returns candidates with UOM and cost from the table, (4) `has_embeddings()` returns True after ingestion and False on empty table.
+- **Depends on:** Tasks 14, 15
+
+### Task 17: Resolution engine — source_item_id throughout, enriched candidates
+
+- **Spec behaviors satisfied:** CacheHitFastPath, MatchingAgentPath, SourceClassification
+- **Acceptance condition:** `IngredientMatch.sysco_item_number` is renamed to `source_item_id`. The `search_catalog` tool returns enriched candidates (with UOM, cost, category, brand) from `CatalogCandidate`. The `get_price` tool uses `source_item_id` parameter. The `update_cache` tool writes `source_item_id` to `ingredient_cache`. `resolve_from_cache()` reads `source_item_id` from cache and calls `get_price(source_item_id, provider)`. Tests verify: (1) cache fast path uses `source_item_id` field, (2) matching agent receives enriched candidates, (3) cache is written with `source_item_id`, (4) subsequent calls hit fast path with `source_item_id`.
+- **Depends on:** Tasks 14, 16
+
+### Task 18: Orchestrator, API, and frontend — source_item_id propagation
+
+- **Spec behaviors satisfied:** QuoteRetrieval, The Pass View
+- **Acceptance condition:** Orchestrator builds line items with `source_item_id` (was `sysco_item_number`) in ingredient dicts and step_data. `_line_item_from_step_data()` reads `source_item_id`. API `_build_quote_from_job()` outputs `source_item_id` in ingredient objects. Frontend `ingredientSchema` uses `source_item_id` field. `PassView` renders `source_item_id`. API startup calls `catalog.ingest("sysco")` instead of `catalog.embed_catalog()` when no embeddings exist. Tests verify: (1) quote output contains `source_item_id` not `sysco_item_number`, (2) frontend builds clean with updated schema, (3) curl integration tests pass end-to-end.
+- **Depends on:** Tasks 16, 17
+
+### Task 19: Re-ingestion and end-to-end validation
+
+- **Spec behaviors satisfied:** (integration validation — all behaviors)
+- **Acceptance condition:** Run `ingest("sysco")` against the live Docker Postgres to populate `catalog_items` with all 565 items including UOM, cost, category, brand, and source_metadata. Verify: (1) all 565 items are active in `catalog_items`, (2) `search("heavy cream")` returns candidates with non-empty `unit_of_measure` and `cost_per_case`, (3) full end-to-end curl test (submit menu → poll → get quote) passes with `source_item_id` in the quote output, (4) no references to `sysco_item_number`, `item_number`, `CatalogItem`, `embed_catalog`, `load_embeddings`, or `catalog_embeddings` remain in source code (excluding alembic migration history). Documented: "No pytest test — validated by integration curl tests and grep verification."
+- **Depends on:** Task 18
+
+### Task 20: Deploy to Render
 
 - **Spec behaviors satisfied:** (deployment — no spec behavior, infrastructure task)
 - **Acceptance condition:** API runs as a Render web service. Frontend deployed as a Render static site. Postgres is a Render managed instance. A submitted job completes end-to-end in production. Documented: "No test written — deployment infrastructure, verified by end-to-end smoke test."
-- **Depends on:** Tasks 9, 12
+- **Depends on:** Tasks 9, 12, 19
 
 ## Open Questions
 
