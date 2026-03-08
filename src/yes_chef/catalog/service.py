@@ -95,6 +95,11 @@ class CatalogService:
         # In-memory index: item_number → (embedding, description, uom, provider)
         self._index: dict[str, tuple[np.ndarray, str, str, str]] = {}
 
+    @property
+    def has_embeddings(self) -> bool:
+        """Return True if embeddings have been loaded into memory."""
+        return len(self._index) > 0
+
     def _get_embed_fn(self) -> EmbedFn:
         """Return the embed function, building the OpenAI default on first use."""
         if self._embed_fn is None:

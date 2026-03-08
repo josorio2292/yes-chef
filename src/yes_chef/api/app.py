@@ -180,6 +180,15 @@ def create_app(
                 session_factory=application.state.session_factory,
             )
             await catalog.load_embeddings()
+            if not catalog.has_embeddings:
+                logger.info(
+                    "No embeddings found in DB — running embed_catalog() for first run…"
+                )
+                await catalog.embed_catalog()
+            else:
+                logger.info(
+                    "Embeddings loaded from DB (%d items).", len(catalog._index)
+                )
             application.state.orchestrator = Orchestrator(
                 session_factory=application.state.session_factory,
                 catalog_service=catalog,

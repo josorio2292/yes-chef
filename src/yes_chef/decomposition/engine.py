@@ -1,12 +1,16 @@
 """Decomposition engine: Exa recipe retrieval + PydanticAI structured extraction."""
 
 import os
+from collections.abc import Callable
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
-from sqlalchemy.ext.asyncio import AsyncSession
+
+# Type alias for an async session factory
+SessionFactory = Callable[..., Any]
 
 # ---------------------------------------------------------------------------
 # Pydantic output models
@@ -120,16 +124,19 @@ async def decompose_item(
     item_name: str,
     item_description: str,
     work_item_id: UUID,
-    session: AsyncSession | None,
+    session_factory: SessionFactory | None,
 ) -> DecompositionResult:
     """
     Decompose a menu item into base purchasable ingredients.
+
+    Each DB operation uses its own short-lived session so no connection is
+    held open across long-running LLM API calls.
 
     Steps:
     1. Try Exa for a professional recipe.
     2. Fall back to the dish description if Exa fails.
     3. Run the decomposition agent for structured extraction.
-    4. Persist results to DB and update work item status (if session provided).
+    4. Persist results to DB and update work item status (if session_factory provided).
     5. Return the DecompositionResult.
     """
     # 1. Try Exa
@@ -151,28 +158,29 @@ async def decompose_item(
             "per-serving quantities."
         )
 
-    # 3. Run decomposition agent
+    # 3. Run decomposition agent (no DB connection held during LLM call)
     run_result = await decomposition_agent.run(prompt)
     decomp_result: DecompositionResult = run_result.output
 
-    # 4. Checkpoint: persist to DB if session is provided
-    if session is not None:
+    # 4. Checkpoint: persist to DB in a short-lived session if factory provided
+    if session_factory is not None:
         from sqlalchemy import select
 
         from yes_chef.db.models import WorkItem
 
-        stmt = select(WorkItem).where(WorkItem.id == work_item_id)
-        db_result = await session.execute(stmt)
-        work_item = db_result.scalar_one_or_none()
+        async with session_factory() as session:
+            async with session.begin():
+                stmt = select(WorkItem).where(WorkItem.id == work_item_id)
+                db_result = await session.execute(stmt)
+                work_item = db_result.scalar_one_or_none()
 
-        if work_item is not None:
-            work_item.status = "decomposed"
-            work_item.step_data = {
-                "ingredients": [
-                    {"name": ing.name, "quantity": ing.quantity}
-                    for ing in decomp_result.ingredients
-                ]
-            }
-            await session.flush()
+                if work_item is not None:
+                    work_item.status = "decomposed"
+                    work_item.step_data = {
+                        "ingredients": [
+                            {"name": ing.name, "quantity": ing.quantity}
+                            for ing in decomp_result.ingredients
+                        ]
+                    }
 
     return decomp_result

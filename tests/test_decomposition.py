@@ -21,6 +21,11 @@ TEST_DB_URL = os.environ.get(
     "postgresql+asyncpg://postgres:postgres@localhost:5432/yeschef_test",
 )
 
+TEST_DB_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/yeschef_test",
+)
+
 EGGS_BENEDICT_RECIPE = """
 Eggs Benedict Recipe (serves 1):
 
@@ -168,7 +173,7 @@ async def test_fallback_without_exa():
                     "with Canadian bacon and hollandaise"
                 ),
                 work_item_id=uuid.uuid4(),
-                session=None,  # no DB persistence for this test
+                session_factory=None,  # no DB persistence for this test
             )
 
     assert isinstance(result, DecompositionResult)
@@ -183,21 +188,22 @@ async def test_fallback_without_exa():
 # ---------------------------------------------------------------------------
 
 
-async def test_checkpoint_writes_to_db(db_session: AsyncSession):
+async def test_checkpoint_writes_to_db(test_session_factory):
     """After decomposition, ingredients are persisted and status is 'decomposed'."""
-    # Create a job and work item
-    job = Job(event="Test Event", status="pending", menu_spec={})
-    db_session.add(job)
-    await db_session.flush()
-
-    work_item = WorkItem(
-        job_id=job.id,
-        item_name="Eggs Benedict Bites",
-        category="appetizers",
-        status="pending",
-    )
-    db_session.add(work_item)
-    await db_session.flush()
+    # Create a job and work item (committed so decompose_item's own session sees it)
+    async with test_session_factory() as sess:
+        job = Job(event="Test Event", status="pending", menu_spec={})
+        sess.add(job)
+        await sess.flush()
+        work_item = WorkItem(
+            job_id=job.id,
+            item_name="Eggs Benedict Bites",
+            category="appetizers",
+            status="pending",
+        )
+        sess.add(work_item)
+        await sess.commit()
+        work_item_id = work_item.id
 
     mock_output = {
         "ingredients": [
@@ -224,23 +230,23 @@ async def test_checkpoint_writes_to_db(db_session: AsyncSession):
                     "Miniature eggs Benedict on toasted brioche rounds "
                     "with Canadian bacon and hollandaise"
                 ),
-                work_item_id=work_item.id,
-                session=db_session,
+                work_item_id=work_item_id,
+                session_factory=test_session_factory,
             )
 
     # Verify result shape
     assert isinstance(result, DecompositionResult)
     assert len(result.ingredients) >= 1
 
-    # Verify DB was updated
-    await db_session.refresh(work_item)
-    assert work_item.status == "decomposed", (
-        f"Expected status 'decomposed', got '{work_item.status}'"
-    )
-    assert work_item.step_data is not None, "step_data should be populated"
+    # Verify DB was updated (query via fresh session)
+    async with test_session_factory() as sess:
+        wi = await sess.get(WorkItem, work_item_id)
+
+    assert wi.status == "decomposed", f"Expected status 'decomposed', got '{wi.status}'"
+    assert wi.step_data is not None, "step_data should be populated"
 
     # step_data should contain the ingredients list
-    persisted_ingredients = work_item.step_data.get("ingredients", [])
+    persisted_ingredients = wi.step_data.get("ingredients", [])
     assert len(persisted_ingredients) >= 1, "Persisted ingredients must be non-empty"
     first = persisted_ingredients[0]
     assert "name" in first, "Each persisted ingredient must have 'name'"

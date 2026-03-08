@@ -2,20 +2,23 @@
 
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from yes_chef.catalog.provider import ItemNotFoundError
 from yes_chef.catalog.service import CatalogCandidate, CatalogService
 from yes_chef.db.models import IngredientCache, WorkItem
 from yes_chef.decomposition.engine import Ingredient
+
+# Type alias for an async session factory
+SessionFactory = Callable[..., Any]
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +56,7 @@ class ResolutionDeps:
     catalog_service: CatalogService
     ingredient_name: str
     serving_quantity: str
-    session: AsyncSession
+    session_factory: SessionFactory
 
 
 # ---------------------------------------------------------------------------
@@ -166,21 +169,22 @@ async def update_cache(
     Returns a confirmation string.
     """
     normalized = ingredient_name.lower().strip()
-    session = ctx.deps.session
 
-    # Delete any existing entry (upsert via delete + insert)
-    await session.execute(
-        delete(IngredientCache).where(IngredientCache.ingredient_name == normalized)
-    )
-
-    entry = IngredientCache(
-        ingredient_name=normalized,
-        sysco_item_number=item_number,
-        source=source,
-        provider=provider,
-    )
-    session.add(entry)
-    await session.flush()
+    async with ctx.deps.session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                delete(IngredientCache).where(
+                    IngredientCache.ingredient_name == normalized
+                )
+            )
+            session.add(
+                IngredientCache(
+                    ingredient_name=normalized,
+                    sysco_item_number=item_number,
+                    source=source,
+                    provider=provider,
+                )
+            )
 
     return f"Cached: {normalized} → {item_number} ({source})"
 
@@ -193,7 +197,7 @@ async def update_cache(
 async def resolve_from_cache(
     ingredient: Ingredient,
     catalog_service: CatalogService,
-    session: AsyncSession,
+    session_factory: SessionFactory,
 ) -> IngredientMatch | None:
     """Try to resolve an ingredient from the cache.
 
@@ -203,30 +207,33 @@ async def resolve_from_cache(
     """
     normalized = ingredient.name.lower().strip()
 
-    # Query cache
-    stmt = select(IngredientCache).where(IngredientCache.ingredient_name == normalized)
-    result = await session.execute(stmt)
-    cache_entry = result.scalar_one_or_none()
-
-    if cache_entry is None:
-        return None  # cache miss
-
-    # not_available cached — return immediately, no price lookup needed
-    if cache_entry.source == "not_available":
-        logger.debug("Cache hit (not_available): %s", normalized)
-        return IngredientMatch(
-            name=ingredient.name,
-            catalog_item=None,
-            sysco_item_number=None,
-            provider=None,
-            source="not_available",
-            unit_cost=None,
-            reasoning="Resolved from cache (not_available)",
+    async with session_factory() as session:
+        # Query cache
+        stmt = select(IngredientCache).where(
+            IngredientCache.ingredient_name == normalized
         )
+        result = await session.execute(stmt)
+        cache_entry = result.scalar_one_or_none()
 
-    # Cached item number — try price lookup
-    item_number = cache_entry.sysco_item_number
-    provider = cache_entry.provider
+        if cache_entry is None:
+            return None  # cache miss
+
+        # not_available cached — return immediately, no price lookup needed
+        if cache_entry.source == "not_available":
+            logger.debug("Cache hit (not_available): %s", normalized)
+            return IngredientMatch(
+                name=ingredient.name,
+                catalog_item=None,
+                sysco_item_number=None,
+                provider=None,
+                source="not_available",
+                unit_cost=None,
+                reasoning="Resolved from cache (not_available)",
+            )
+
+        # Cached item number — try price lookup
+        item_number = cache_entry.sysco_item_number
+        provider = cache_entry.provider
 
     try:
         price_result = catalog_service.get_price(item_number, provider)
@@ -236,7 +243,7 @@ async def resolve_from_cache(
             catalog_item=None,  # not stored in cache; agent result had it
             sysco_item_number=item_number,
             provider=provider,
-            source=cache_entry.source,  # type: ignore[arg-type]
+            source="sysco_catalog",
             unit_cost=price_result.cost_per_case,  # cached cost (no UOM re-parsing)
             reasoning="Resolved from cache",
         )
@@ -247,11 +254,14 @@ async def resolve_from_cache(
             item_number,
             exc,
         )
-        # Invalidate cache entry
-        await session.execute(
-            delete(IngredientCache).where(IngredientCache.ingredient_name == normalized)
-        )
-        await session.flush()
+        # Invalidate stale cache entry in a short-lived session
+        async with session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    delete(IngredientCache).where(
+                        IngredientCache.ingredient_name == normalized
+                    )
+                )
         return None  # fall through to agent
 
 
@@ -264,9 +274,12 @@ async def resolve_item(
     ingredients: list[Ingredient],
     catalog_service: CatalogService,
     work_item_id: UUID,
-    session: AsyncSession,
+    session_factory: SessionFactory,
 ) -> ResolveResult:
     """Resolve all ingredients to catalog items.
+
+    Each DB operation uses its own short-lived session so no connection is
+    held open across long-running LLM API calls.
 
     For each ingredient:
     1. Try cache fast path.
@@ -282,9 +295,11 @@ async def resolve_item(
     for ingredient in ingredients:
         match: IngredientMatch | None = None
 
-        # 1. Try cache fast path
+        # 1. Try cache fast path (short-lived session inside)
         try:
-            match = await resolve_from_cache(ingredient, catalog_service, session)
+            match = await resolve_from_cache(
+                ingredient, catalog_service, session_factory
+            )
         except Exception as exc:
             logger.warning("Cache lookup error for %s: %s", ingredient.name, exc)
             match = None
@@ -293,13 +308,13 @@ async def resolve_item(
             matches.append(match)
             continue
 
-        # 2. Run matching agent
+        # 2. Run matching agent — no DB connection held during LLM calls
         try:
             deps = ResolutionDeps(
                 catalog_service=catalog_service,
                 ingredient_name=ingredient.name,
                 serving_quantity=ingredient.quantity,
-                session=session,
+                session_factory=session_factory,
             )
             prompt = (
                 f"Ingredient: {ingredient.name}\n"
@@ -319,20 +334,21 @@ async def resolve_item(
             # The agent's update_cache tool may not have fired (e.g. TestModel),
             # so we upsert here unconditionally based on the structured output.
             normalized = ingredient.name.lower().strip()
-            await session.execute(
-                delete(IngredientCache).where(
-                    IngredientCache.ingredient_name == normalized
-                )
-            )
-            session.add(
-                IngredientCache(
-                    ingredient_name=normalized,
-                    sysco_item_number=match.sysco_item_number,
-                    source=match.source,
-                    provider=match.provider,
-                )
-            )
-            await session.flush()
+            async with session_factory() as session:
+                async with session.begin():
+                    await session.execute(
+                        delete(IngredientCache).where(
+                            IngredientCache.ingredient_name == normalized
+                        )
+                    )
+                    session.add(
+                        IngredientCache(
+                            ingredient_name=normalized,
+                            sysco_item_number=match.sysco_item_number,
+                            source=match.source,
+                            provider=match.provider,
+                        )
+                    )
         except Exception as exc:
             logger.error("Agent failed for %s: %s", ingredient.name, exc)
             # Partial failure — mark as not_available
@@ -351,17 +367,18 @@ async def resolve_item(
     # Cost rollup
     cost = sum(m.unit_cost for m in matches if m.unit_cost is not None)
 
-    # Checkpoint: update work item
-    stmt = select(WorkItem).where(WorkItem.id == work_item_id)
-    db_result = await session.execute(stmt)
-    work_item = db_result.scalar_one_or_none()
+    # Checkpoint: update work item in a short-lived session
+    async with session_factory() as session:
+        async with session.begin():
+            stmt = select(WorkItem).where(WorkItem.id == work_item_id)
+            db_result = await session.execute(stmt)
+            work_item = db_result.scalar_one_or_none()
 
-    if work_item is not None:
-        work_item.status = "completed"
-        work_item.step_data = {
-            "matches": [m.model_dump() for m in matches],
-            "ingredient_cost_per_unit": cost,
-        }
-        await session.flush()
+            if work_item is not None:
+                work_item.status = "completed"
+                work_item.step_data = {
+                    "matches": [m.model_dump() for m in matches],
+                    "ingredient_cost_per_unit": cost,
+                }
 
     return ResolveResult(matches=matches, ingredient_cost_per_unit=cost)

@@ -43,13 +43,6 @@ def resolution_session_factory(resolution_engine):
     )
 
 
-@pytest_asyncio.fixture(loop_scope="session")
-async def db_session(resolution_session_factory):
-    async with resolution_session_factory() as sess:
-        yield sess
-        await sess.rollback()
-
-
 # ---------------------------------------------------------------------------
 # Catalog service mock helpers
 # ---------------------------------------------------------------------------
@@ -84,26 +77,30 @@ def make_mock_catalog_service(
 # ---------------------------------------------------------------------------
 
 
-async def test_cache_hit_fast_path(db_session: AsyncSession):
+async def test_cache_hit_fast_path(resolution_session_factory):
     """Cache hit: returns IngredientMatch with correct fields, zero LLM calls."""
     from yes_chef.resolution.engine import IngredientMatch, resolve_from_cache
 
-    # Insert cache entry for "butter"
-    cache_entry = IngredientCache(
-        ingredient_name="butter",
-        sysco_item_number="12345",
-        source="sysco_catalog",
-        provider="sysco",
-    )
-    db_session.add(cache_entry)
-    await db_session.flush()
+    # Insert cache entry for "butter" (committed so a new session can see it)
+    async with resolution_session_factory() as sess:
+        sess.add(
+            IngredientCache(
+                ingredient_name="butter",
+                sysco_item_number="12345",
+                source="sysco_catalog",
+                provider="sysco",
+            )
+        )
+        await sess.commit()
 
     # Catalog service returns a valid price
     price = PriceResult(cost_per_case=40.0, unit_of_measure="36 OZ")
     catalog_svc = make_mock_catalog_service(price_result=price)
 
     ingredient = Ingredient(name="butter", quantity="2 oz")
-    result = await resolve_from_cache(ingredient, catalog_svc, db_session)
+    result = await resolve_from_cache(
+        ingredient, catalog_svc, resolution_session_factory
+    )
 
     assert result is not None
     assert isinstance(result, IngredientMatch)
@@ -121,32 +118,37 @@ async def test_cache_hit_fast_path(db_session: AsyncSession):
 # ---------------------------------------------------------------------------
 
 
-async def test_cache_hit_invalidation(db_session: AsyncSession):
+async def test_cache_hit_invalidation(resolution_session_factory):
     """Cache entry pointing to non-existent item → invalidated, falls through."""
     from yes_chef.resolution.engine import resolve_from_cache
 
     # Insert cache entry for "milk"
-    cache_entry = IngredientCache(
-        ingredient_name="milk",
-        sysco_item_number="99999",
-        source="sysco_catalog",
-        provider="sysco",
-    )
-    db_session.add(cache_entry)
-    await db_session.flush()
+    async with resolution_session_factory() as sess:
+        sess.add(
+            IngredientCache(
+                ingredient_name="milk",
+                sysco_item_number="99999",
+                source="sysco_catalog",
+                provider="sysco",
+            )
+        )
+        await sess.commit()
 
     # get_price raises ItemNotFoundError (item no longer exists)
     catalog_svc = make_mock_catalog_service(price_raises=ItemNotFoundError("99999"))
 
     ingredient = Ingredient(name="milk", quantity="4 oz")
-    result = await resolve_from_cache(ingredient, catalog_svc, db_session)
+    result = await resolve_from_cache(
+        ingredient, catalog_svc, resolution_session_factory
+    )
 
     # Should return None (cache miss → fall through to agent)
     assert result is None
 
     # Cache entry should be invalidated (deleted)
-    stmt = select(IngredientCache).where(IngredientCache.ingredient_name == "milk")
-    row = (await db_session.execute(stmt)).scalar_one_or_none()
+    async with resolution_session_factory() as sess:
+        stmt = select(IngredientCache).where(IngredientCache.ingredient_name == "milk")
+        row = (await sess.execute(stmt)).scalar_one_or_none()
     assert row is None, "Cache entry should have been deleted on invalidation"
 
 
@@ -155,7 +157,7 @@ async def test_cache_hit_invalidation(db_session: AsyncSession):
 # ---------------------------------------------------------------------------
 
 
-async def test_matching_agent_finds_match(db_session: AsyncSession):
+async def test_matching_agent_finds_match(resolution_session_factory):
     """Agent path: resolve beef tenderloin; verify IngredientMatch and cache."""
     from yes_chef.resolution.engine import IngredientMatch, matching_agent, resolve_item
 
@@ -173,18 +175,20 @@ async def test_matching_agent_finds_match(db_session: AsyncSession):
         search_results=candidates, price_result=price
     )
 
-    # Create a job + work item
-    job = Job(event="Test Beef Event", status="pending", menu_spec={})
-    db_session.add(job)
-    await db_session.flush()
-    work_item = WorkItem(
-        job_id=job.id,
-        item_name="Beef Tenderloin",
-        category="entrees",
-        status="pending",
-    )
-    db_session.add(work_item)
-    await db_session.flush()
+    # Create a job + work item (committed so resolve_item's own session can see it)
+    async with resolution_session_factory() as sess:
+        job = Job(event="Test Beef Event", status="pending", menu_spec={})
+        sess.add(job)
+        await sess.flush()
+        work_item = WorkItem(
+            job_id=job.id,
+            item_name="Beef Tenderloin",
+            category="entrees",
+            status="pending",
+        )
+        sess.add(work_item)
+        await sess.commit()
+        work_item_id = work_item.id
 
     mock_output = {
         "name": "beef tenderloin",
@@ -202,8 +206,8 @@ async def test_matching_agent_finds_match(db_session: AsyncSession):
         result = await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item.id,
-            session=db_session,
+            work_item_id=work_item_id,
+            session_factory=resolution_session_factory,
         )
 
     assert len(result.matches) == 1
@@ -213,10 +217,11 @@ async def test_matching_agent_finds_match(db_session: AsyncSession):
     assert match.sysco_item_number == "54321"
 
     # Cache should be populated
-    stmt = select(IngredientCache).where(
-        IngredientCache.ingredient_name == "beef tenderloin"
-    )
-    cache_row = (await db_session.execute(stmt)).scalar_one_or_none()
+    async with resolution_session_factory() as sess:
+        stmt = select(IngredientCache).where(
+            IngredientCache.ingredient_name == "beef tenderloin"
+        )
+        cache_row = (await sess.execute(stmt)).scalar_one_or_none()
     assert cache_row is not None, "Cache entry must be created after agent resolution"
     assert cache_row.sysco_item_number == "54321"
     assert cache_row.source == "sysco_catalog"
@@ -227,23 +232,25 @@ async def test_matching_agent_finds_match(db_session: AsyncSession):
 # ---------------------------------------------------------------------------
 
 
-async def test_matching_agent_not_available(db_session: AsyncSession):
+async def test_matching_agent_not_available(resolution_session_factory):
     """Agent returns not_available for 'truffle oil'; cache stores not_available."""
     from yes_chef.resolution.engine import IngredientMatch, matching_agent, resolve_item
 
     catalog_svc = make_mock_catalog_service(search_results=[], price_result=None)
 
-    job = Job(event="Test Truffle Event", status="pending", menu_spec={})
-    db_session.add(job)
-    await db_session.flush()
-    work_item = WorkItem(
-        job_id=job.id,
-        item_name="Truffle Dish",
-        category="entrees",
-        status="pending",
-    )
-    db_session.add(work_item)
-    await db_session.flush()
+    async with resolution_session_factory() as sess:
+        job = Job(event="Test Truffle Event", status="pending", menu_spec={})
+        sess.add(job)
+        await sess.flush()
+        work_item = WorkItem(
+            job_id=job.id,
+            item_name="Truffle Dish",
+            category="entrees",
+            status="pending",
+        )
+        sess.add(work_item)
+        await sess.commit()
+        work_item_id = work_item.id
 
     mock_output = {
         "name": "truffle oil",
@@ -261,8 +268,8 @@ async def test_matching_agent_not_available(db_session: AsyncSession):
         result = await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item.id,
-            session=db_session,
+            work_item_id=work_item_id,
+            session_factory=resolution_session_factory,
         )
 
     assert len(result.matches) == 1
@@ -272,10 +279,11 @@ async def test_matching_agent_not_available(db_session: AsyncSession):
     assert match.unit_cost is None
 
     # Cache should store not_available
-    stmt = select(IngredientCache).where(
-        IngredientCache.ingredient_name == "truffle oil"
-    )
-    cache_row = (await db_session.execute(stmt)).scalar_one_or_none()
+    async with resolution_session_factory() as sess:
+        stmt = select(IngredientCache).where(
+            IngredientCache.ingredient_name == "truffle oil"
+        )
+        cache_row = (await sess.execute(stmt)).scalar_one_or_none()
     assert cache_row is not None, "Cache entry must be created for not_available"
     assert cache_row.source == "not_available"
     assert cache_row.sysco_item_number is None
@@ -286,7 +294,7 @@ async def test_matching_agent_not_available(db_session: AsyncSession):
 # ---------------------------------------------------------------------------
 
 
-async def test_cache_populated_after_agent(db_session: AsyncSession):
+async def test_cache_populated_after_agent(resolution_session_factory):
     """After agent resolves, cache entry exists in DB with correct fields."""
     from yes_chef.resolution.engine import matching_agent, resolve_item
 
@@ -304,17 +312,19 @@ async def test_cache_populated_after_agent(db_session: AsyncSession):
         search_results=candidates, price_result=price
     )
 
-    job = Job(event="Chicken Event", status="pending", menu_spec={})
-    db_session.add(job)
-    await db_session.flush()
-    work_item = WorkItem(
-        job_id=job.id,
-        item_name="Chicken Breast",
-        category="entrees",
-        status="pending",
-    )
-    db_session.add(work_item)
-    await db_session.flush()
+    async with resolution_session_factory() as sess:
+        job = Job(event="Chicken Event", status="pending", menu_spec={})
+        sess.add(job)
+        await sess.flush()
+        work_item = WorkItem(
+            job_id=job.id,
+            item_name="Chicken Breast",
+            category="entrees",
+            status="pending",
+        )
+        sess.add(work_item)
+        await sess.commit()
+        work_item_id = work_item.id
 
     mock_output = {
         "name": "chicken breast",
@@ -332,14 +342,15 @@ async def test_cache_populated_after_agent(db_session: AsyncSession):
         await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item.id,
-            session=db_session,
+            work_item_id=work_item_id,
+            session_factory=resolution_session_factory,
         )
 
-    stmt = select(IngredientCache).where(
-        IngredientCache.ingredient_name == "chicken breast"
-    )
-    cache_row = (await db_session.execute(stmt)).scalar_one_or_none()
+    async with resolution_session_factory() as sess:
+        stmt = select(IngredientCache).where(
+            IngredientCache.ingredient_name == "chicken breast"
+        )
+        cache_row = (await sess.execute(stmt)).scalar_one_or_none()
     assert cache_row is not None
     assert cache_row.sysco_item_number == "77777"
     assert cache_row.source == "sysco_catalog"
@@ -351,34 +362,38 @@ async def test_cache_populated_after_agent(db_session: AsyncSession):
 # ---------------------------------------------------------------------------
 
 
-async def test_subsequent_call_hits_fast_path(db_session: AsyncSession):
+async def test_subsequent_call_hits_fast_path(resolution_session_factory):
     """Second call for same ingredient hits fast path (zero LLM calls)."""
     from yes_chef.resolution.engine import matching_agent, resolve_item
 
-    # Pre-populate cache
-    cache_entry = IngredientCache(
-        ingredient_name="salmon fillet",
-        sysco_item_number="88888",
-        source="sysco_catalog",
-        provider="sysco",
-    )
-    db_session.add(cache_entry)
-    await db_session.flush()
+    # Pre-populate cache (committed)
+    async with resolution_session_factory() as sess:
+        sess.add(
+            IngredientCache(
+                ingredient_name="salmon fillet",
+                sysco_item_number="88888",
+                source="sysco_catalog",
+                provider="sysco",
+            )
+        )
+        await sess.commit()
 
     price = PriceResult(cost_per_case=120.0, unit_of_measure="20 LB CASE")
     catalog_svc = make_mock_catalog_service(price_result=price)
 
-    job = Job(event="Salmon Event", status="pending", menu_spec={})
-    db_session.add(job)
-    await db_session.flush()
-    work_item = WorkItem(
-        job_id=job.id,
-        item_name="Salmon",
-        category="entrees",
-        status="pending",
-    )
-    db_session.add(work_item)
-    await db_session.flush()
+    async with resolution_session_factory() as sess:
+        job = Job(event="Salmon Event", status="pending", menu_spec={})
+        sess.add(job)
+        await sess.flush()
+        work_item = WorkItem(
+            job_id=job.id,
+            item_name="Salmon",
+            category="entrees",
+            status="pending",
+        )
+        sess.add(work_item)
+        await sess.commit()
+        work_item_id = work_item.id
 
     ingredient = Ingredient(name="salmon fillet", quantity="6 oz")
 
@@ -395,8 +410,8 @@ async def test_subsequent_call_hits_fast_path(db_session: AsyncSession):
         result = await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item.id,
-            session=db_session,
+            work_item_id=work_item_id,
+            session_factory=resolution_session_factory,
         )
 
     assert len(result.matches) == 1
@@ -458,7 +473,7 @@ async def test_cost_rollup():
 # ---------------------------------------------------------------------------
 
 
-async def test_partial_ingredient_failure(db_session: AsyncSession):
+async def test_partial_ingredient_failure(resolution_session_factory):
     """One ingredient fails; gets not_available. Work item status not marked failed."""
     from yes_chef.resolution.engine import matching_agent, resolve_item
 
@@ -477,17 +492,19 @@ async def test_partial_ingredient_failure(db_session: AsyncSession):
         search_results=candidates, price_result=price
     )
 
-    job = Job(event="Partial Failure Event", status="pending", menu_spec={})
-    db_session.add(job)
-    await db_session.flush()
-    work_item = WorkItem(
-        job_id=job.id,
-        item_name="Test Dish",
-        category="entrees",
-        status="pending",
-    )
-    db_session.add(work_item)
-    await db_session.flush()
+    async with resolution_session_factory() as sess:
+        job = Job(event="Partial Failure Event", status="pending", menu_spec={})
+        sess.add(job)
+        await sess.flush()
+        work_item = WorkItem(
+            job_id=job.id,
+            item_name="Test Dish",
+            category="entrees",
+            status="pending",
+        )
+        sess.add(work_item)
+        await sess.commit()
+        work_item_id = work_item.id
 
     # Good match output for butter
     good_output = {
@@ -523,8 +540,8 @@ async def test_partial_ingredient_failure(db_session: AsyncSession):
         result = await resolve_item(
             ingredients=[ingredient_good, ingredient_bad],
             catalog_service=catalog_svc,
-            work_item_id=work_item.id,
-            session=db_session,
+            work_item_id=work_item_id,
+            session_factory=resolution_session_factory,
         )
 
     # Both ingredients should produce a match
@@ -535,11 +552,10 @@ async def test_partial_ingredient_failure(db_session: AsyncSession):
     assert bad_match.source == "not_available"
     assert bad_match.unit_cost is None
 
-    # Work item should NOT be marked failed
-    await db_session.refresh(work_item)
-    assert work_item.status != "failed", (
-        "Partial failure must not mark work item failed"
-    )
+    # Work item should NOT be marked failed (resolve_item checkpoints as "completed")
+    async with resolution_session_factory() as sess:
+        wi = await sess.get(WorkItem, work_item_id)
+        assert wi.status != "failed", "Partial failure must not mark work item failed"
 
 
 # ---------------------------------------------------------------------------
@@ -547,7 +563,7 @@ async def test_partial_ingredient_failure(db_session: AsyncSession):
 # ---------------------------------------------------------------------------
 
 
-async def test_resolve_checkpoint(db_session: AsyncSession):
+async def test_resolve_checkpoint(resolution_session_factory):
     """After resolve_item, work item status is 'completed' and step_data has results."""
     from yes_chef.resolution.engine import matching_agent, resolve_item
 
@@ -565,17 +581,19 @@ async def test_resolve_checkpoint(db_session: AsyncSession):
         search_results=candidates, price_result=price
     )
 
-    job = Job(event="Checkpoint Event", status="pending", menu_spec={})
-    db_session.add(job)
-    await db_session.flush()
-    work_item = WorkItem(
-        job_id=job.id,
-        item_name="Cream Sauce",
-        category="sauces",
-        status="pending",
-    )
-    db_session.add(work_item)
-    await db_session.flush()
+    async with resolution_session_factory() as sess:
+        job = Job(event="Checkpoint Event", status="pending", menu_spec={})
+        sess.add(job)
+        await sess.flush()
+        work_item = WorkItem(
+            job_id=job.id,
+            item_name="Cream Sauce",
+            category="sauces",
+            status="pending",
+        )
+        sess.add(work_item)
+        await sess.commit()
+        work_item_id = work_item.id
 
     mock_output = {
         "name": "heavy cream",
@@ -593,19 +611,19 @@ async def test_resolve_checkpoint(db_session: AsyncSession):
         await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item.id,
-            session=db_session,
+            work_item_id=work_item_id,
+            session_factory=resolution_session_factory,
         )
 
-    # Checkpoint: work item status
-    await db_session.refresh(work_item)
-    assert work_item.status == "completed", (
-        f"Expected 'completed', got '{work_item.status}'"
-    )
-    assert work_item.step_data is not None
+    # Checkpoint: work item status (query via fresh session)
+    async with resolution_session_factory() as sess:
+        wi = await sess.get(WorkItem, work_item_id)
+
+    assert wi.status == "completed", f"Expected 'completed', got '{wi.status}'"
+    assert wi.step_data is not None
 
     # step_data must contain matches and cost
-    assert "matches" in work_item.step_data
-    assert "ingredient_cost_per_unit" in work_item.step_data
-    assert len(work_item.step_data["matches"]) == 1
-    assert work_item.step_data["ingredient_cost_per_unit"] == 5.0
+    assert "matches" in wi.step_data
+    assert "ingredient_cost_per_unit" in wi.step_data
+    assert len(wi.step_data["matches"]) == 1
+    assert wi.step_data["ingredient_cost_per_unit"] == 5.0

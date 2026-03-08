@@ -8,13 +8,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from yes_chef.catalog.service import CatalogService
 from yes_chef.db.models import Job, WorkItem
 from yes_chef.decomposition.engine import (
     DecompositionResult,
     Ingredient,
+    SessionFactory,
     decompose_item,
 )
 from yes_chef.events import EventBus, SSEEvent
@@ -22,13 +22,15 @@ from yes_chef.resolution.engine import ResolveResult, resolve_item
 
 logger = logging.getLogger(__name__)
 
-# Type aliases for the injectable engine functions
+# Type aliases for the injectable engine functions.
+# Both engines receive the session_factory so they manage their own short-lived
+# sessions, keeping DB connections free during long LLM API calls.
 DecomposeFn = Callable[
-    [str, str, uuid.UUID, AsyncSession],
+    [str, str, uuid.UUID, SessionFactory],
     Coroutine[Any, Any, DecompositionResult],
 ]
 ResolveFn = Callable[
-    [list[Ingredient], CatalogService, uuid.UUID, AsyncSession],
+    [list[Ingredient], CatalogService, uuid.UUID, SessionFactory],
     Coroutine[Any, Any, ResolveResult],
 ]
 
@@ -223,11 +225,15 @@ class Orchestrator:
                     ),
                 )
 
+                # Pass session_factory so decompose_item manages its own
+                # short-lived sessions — no connection held during LLM calls.
+                decomp_result = await self._decompose_fn(
+                    item_name, description, item_id, self._session_factory
+                )
+
+                # Checkpoint: status → "decomposed", step_data has ingredients.
+                # Opens a short-lived session after the LLM call has returned.
                 async with self._session_factory() as session:
-                    decomp_result = await self._decompose_fn(
-                        item_name, description, item_id, session
-                    )
-                    # Checkpoint: status → "decomposed", step_data has ingredients
                     wi = await session.get(WorkItem, item_id)
                     wi.status = "decomposed"
                     wi.step_data = {
@@ -275,11 +281,15 @@ class Orchestrator:
                 ),
             )
 
+            # Pass session_factory so resolve_item manages its own short-lived
+            # sessions — no connection held during LLM calls.
+            resolve_result = await self._resolve_fn(
+                ingredients, self._catalog_service, item_id, self._session_factory
+            )
+
+            # Checkpoint: status → "completed", step_data has matches + cost.
+            # Opens a short-lived session after the LLM call has returned.
             async with self._session_factory() as session:
-                resolve_result = await self._resolve_fn(
-                    ingredients, self._catalog_service, item_id, session
-                )
-                # Checkpoint: status → "completed", step_data has matches + cost
                 wi = await session.get(WorkItem, item_id)
                 wi.status = "completed"
                 wi.step_data = {
