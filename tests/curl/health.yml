@@ -1,0 +1,8 @@
+name: Health check
+request:
+  method: GET
+  url: /health
+expect:
+  status: 200
+  body:
+    status: any_string

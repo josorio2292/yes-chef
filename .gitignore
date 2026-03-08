@@ -1,4 +1,19 @@
 .venv/
 __pycache__/
 *.pyc
+*.pyo
 .env
+.env.*
+
+# Ruff cache
+.ruff_cache/
+
+# Pytest cache
+.pytest_cache/
+
+# Pi agent working directory
+.crew/
+
+# Distribution / build
+dist/
+*.egg-info/

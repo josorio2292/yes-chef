@@ -6,9 +6,9 @@ Tests the format mismatch between lowercase natural language (ingredient names)
 and ALL-CAPS comma-separated catalog descriptions.
 """
 
+import math
 import os
 import sys
-import math
 
 
 def get_api_config():
@@ -17,14 +17,14 @@ def get_api_config():
     openai_key = os.environ.get("OPENAI_API_KEY")
 
     if openrouter_key:
-        print(f"✓ Using OPENROUTER_API_KEY (OpenRouter API)")
+        print("✓ Using OPENROUTER_API_KEY (OpenRouter API)")
         return (
             openrouter_key,
             "https://openrouter.ai/api/v1",
             "openai/text-embedding-3-small",
         )
     elif openai_key:
-        print(f"✓ Using OPENAI_API_KEY (OpenAI API directly)")
+        print("✓ Using OPENAI_API_KEY (OpenAI API directly)")
         return (
             openai_key,
             "https://api.openai.com/v1",
@@ -58,27 +58,27 @@ CATALOG_DESCRIPTIONS = [
 
 INGREDIENT_NAMES = [
     # Matched ingredients (expected match in catalog)
-    "beef tenderloin filet",       # → BEEF, TENDERLOIN, FILET...
-    "diver scallops",              # → SCALLOP, SEA, DIVER...
-    "applewood smoked bacon",      # → BACON, SMOKED, APPLEWOOD...
-    "wild salmon fillet",          # → SALMON, WILD, SOCKEYE...
-    "heavy cream",                 # → CREAM, HEAVY, WHIPPING...
-    "parmesan cheese",             # → CHEESE, PARMESAN, REGGIANO...
-    "rack of lamb",                # → LAMB, RACK, FRENCHED...
-    "ahi tuna",                    # → TUNA, AHI, SASHIMI GRADE...
-    "olive oil",                   # → OIL, OLIVE, EXTRA VIRGIN...
-    "arborio rice",                # → RICE, ARBORIO, ITALIAN...
-    "unsalted butter",             # → BUTTER, UNSALTED, AA GRADE...
-    "fresh asparagus",             # → ASPARAGUS, FRESH, JUMBO...
-    "shiitake mushrooms",          # → MUSHROOM, SHIITAKE, FRESH...
-    "kosher salt",                 # → SALT, KOSHER...
+    "beef tenderloin filet",  # → BEEF, TENDERLOIN, FILET...
+    "diver scallops",  # → SCALLOP, SEA, DIVER...
+    "applewood smoked bacon",  # → BACON, SMOKED, APPLEWOOD...
+    "wild salmon fillet",  # → SALMON, WILD, SOCKEYE...
+    "heavy cream",  # → CREAM, HEAVY, WHIPPING...
+    "parmesan cheese",  # → CHEESE, PARMESAN, REGGIANO...
+    "rack of lamb",  # → LAMB, RACK, FRENCHED...
+    "ahi tuna",  # → TUNA, AHI, SASHIMI GRADE...
+    "olive oil",  # → OIL, OLIVE, EXTRA VIRGIN...
+    "arborio rice",  # → RICE, ARBORIO, ITALIAN...
+    "unsalted butter",  # → BUTTER, UNSALTED, AA GRADE...
+    "fresh asparagus",  # → ASPARAGUS, FRESH, JUMBO...
+    "shiitake mushrooms",  # → MUSHROOM, SHIITAKE, FRESH...
+    "kosher salt",  # → SALT, KOSHER...
     # No-match ingredients (not in catalog — should score poorly)
-    "truffle oil",                 # closest: OIL, OLIVE or OIL, CANOLA?
-    "saffron",                     # no match
-    "A5 wagyu beef",               # closest: BEEF, TENDERLOIN?
-    "bourbon",                     # no match
-    "yuzu juice",                  # no match
-    "salt",                        # closest: SALT, KOSHER
+    "truffle oil",  # closest: OIL, OLIVE or OIL, CANOLA?
+    "saffron",  # no match
+    "A5 wagyu beef",  # closest: BEEF, TENDERLOIN?
+    "bourbon",  # no match
+    "yuzu juice",  # no match
+    "salt",  # closest: SALT, KOSHER
 ]
 
 # Expected best-match catalog index for each ingredient (None = no good match)
@@ -108,8 +108,9 @@ EXPECTED_CATALOG_IDX = {
 
 # ── Embedding utilities ───────────────────────────────────────────────────────
 
+
 def cosine_similarity(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
     if norm_a == 0 or norm_b == 0:
@@ -130,6 +131,7 @@ def embed_batch(client, texts: list[str], model: str) -> list[list[float]]:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main():
     print("=" * 70)
     print("  Embedding Format Mismatch Test: text-embedding-3-small")
@@ -146,7 +148,8 @@ def main():
     client = OpenAI(api_key=api_key, base_url=base_url)
 
     # ── Embed catalog descriptions ─────────────────────────────────────────
-    print(f"Embedding {len(CATALOG_DESCRIPTIONS)} catalog descriptions...", end=" ", flush=True)
+    n_cat = len(CATALOG_DESCRIPTIONS)
+    print(f"Embedding {n_cat} catalog descriptions...", end=" ", flush=True)
     catalog_embeddings = embed_batch(client, CATALOG_DESCRIPTIONS, model)
     print("done")
 
@@ -168,8 +171,8 @@ def main():
     print("  Per-Ingredient Top-3 Matches")
     print("=" * 70)
 
-    best_scores = []        # score of rank-1 match for summary
-    rank1_rank2_gaps = []   # rank1 - rank2 gap
+    best_scores = []  # score of rank-1 match for summary
+    rank1_rank2_gaps = []  # rank1 - rank2 gap
     matched_correctly = 0
     total_with_expected = 0
 
@@ -202,16 +205,17 @@ def main():
         else:
             status = "~"  # no expected match
 
-        print(f"\n  [{status}] Ingredient: \"{ingredient}\"")
+        print(f'\n  [{status}] Ingredient: "{ingredient}"')
         if expected_idx is not None:
-            expected_correct = "✓" if in_top3 else "✗"
-            print(f"      Expected: [{expected_idx}] \"{CATALOG_DESCRIPTIONS[expected_idx]}\"")
+            expected_desc = CATALOG_DESCRIPTIONS[expected_idx]
+            print(f'      Expected: [{expected_idx}] "{expected_desc}"')
 
         for rank, (cat_idx, score) in enumerate(top3, 1):
             marker = ""
             if expected_idx is not None and cat_idx == expected_idx:
                 marker = " ← EXPECTED"
-            print(f"      #{rank}: [{cat_idx:2d}] {score:.4f}  \"{CATALOG_DESCRIPTIONS[cat_idx]}\"{marker}")
+            cat_desc = CATALOG_DESCRIPTIONS[cat_idx]
+            print(f'      #{rank}: [{cat_idx:2d}] {score:.4f}  "{cat_desc}"{marker}')
 
         print(f"      Gap (rank1 - rank2): {gap:.4f}")
 
@@ -222,59 +226,94 @@ def main():
     print("=" * 70)
     print()
 
-    print(f"  Correct top-3 matches: {matched_correctly}/{total_with_expected} ({100*matched_correctly/total_with_expected:.0f}%)")
+    pct = 100 * matched_correctly / total_with_expected
+    print(
+        f"  Correct top-3 matches: {matched_correctly}/{total_with_expected}"
+        f" ({pct:.0f}%)"
+    )
     print()
 
     # Score distribution for best matches
-    sorted_best = sorted(zip(INGREDIENT_NAMES, best_scores), key=lambda x: x[1], reverse=True)
+    sorted_best = sorted(
+        zip(INGREDIENT_NAMES, best_scores, strict=True),
+        key=lambda x: x[1],
+        reverse=True,
+    )
     print("  Best match scores (rank-1), sorted:")
     for name, score in sorted_best:
         bar = "█" * int(score * 40)
-        print(f"    {score:.4f} {bar}  \"{name}\"")
+        print(f'    {score:.4f} {bar}  "{name}"')
 
     print()
     print("  Score distribution:")
     scores_only = [s for _, s in sorted_best]
     print(f"    Max:    {max(scores_only):.4f}")
     print(f"    Min:    {min(scores_only):.4f}")
-    print(f"    Mean:   {sum(scores_only)/len(scores_only):.4f}")
-    print(f"    Median: {sorted(scores_only)[len(scores_only)//2]:.4f}")
+    print(f"    Mean:   {sum(scores_only) / len(scores_only):.4f}")
+    print(f"    Median: {sorted(scores_only)[len(scores_only) // 2]:.4f}")
 
     print()
     print("  Rank-1 vs Rank-2 gaps (higher = more confident match):")
-    sorted_gaps = sorted(zip(INGREDIENT_NAMES, rank1_rank2_gaps), key=lambda x: x[1], reverse=True)
+    sorted_gaps = sorted(
+        zip(INGREDIENT_NAMES, rank1_rank2_gaps, strict=True),
+        key=lambda x: x[1],
+        reverse=True,
+    )
     for name, gap in sorted_gaps:
         bar = "█" * int(gap * 200)
-        print(f"    {gap:.4f} {bar}  \"{name}\"")
+        print(f'    {gap:.4f} {bar}  "{name}"')
 
     print()
     print("  Worst matches (lowest rank-1 score):")
     for name, score in sorted_best[-5:]:
         expected_idx = EXPECTED_CATALOG_IDX.get(name)
-        label = "(no expected match)" if expected_idx is None else f"(expected: [{expected_idx}])"
-        print(f"    {score:.4f}  \"{name}\" {label}")
+        label = (
+            "(no expected match)"
+            if expected_idx is None
+            else f"(expected: [{expected_idx}])"
+        )
+        print(f'    {score:.4f}  "{name}" {label}')
 
     print()
     print("  Assessment:")
-    avg_matched = sum(
-        best_scores[i] for i, n in enumerate(INGREDIENT_NAMES)
-        if EXPECTED_CATALOG_IDX.get(n) is not None
-    ) / total_with_expected
+    avg_matched = (
+        sum(
+            best_scores[i]
+            for i, n in enumerate(INGREDIENT_NAMES)
+            if EXPECTED_CATALOG_IDX.get(n) is not None
+        )
+        / total_with_expected
+    )
     avg_unmatched = sum(
-        best_scores[i] for i, n in enumerate(INGREDIENT_NAMES)
+        best_scores[i]
+        for i, n in enumerate(INGREDIENT_NAMES)
         if EXPECTED_CATALOG_IDX.get(n) is None
     ) / (len(INGREDIENT_NAMES) - total_with_expected)
 
-    print(f"    Avg best-match score for ingredients WITH catalog entry:    {avg_matched:.4f}")
-    print(f"    Avg best-match score for ingredients WITHOUT catalog entry: {avg_unmatched:.4f}")
+    print(
+        f"    Avg best-match score for ingredients WITH catalog entry:"
+        f"    {avg_matched:.4f}"
+    )
+    print(
+        f"    Avg best-match score for ingredients WITHOUT catalog entry:"
+        f" {avg_unmatched:.4f}"
+    )
     separation = avg_matched - avg_unmatched
-    print(f"    Separation (matched - unmatched):                           {separation:.4f}")
+    print(
+        f"    Separation (matched - unmatched):"
+        f"                           {separation:.4f}"
+    )
     if separation > 0.05:
-        print("    → GOOD: Embeddings clearly distinguish matched from unmatched items.")
+        print(
+            "    → GOOD: Embeddings clearly distinguish matched from unmatched items."
+        )
     elif separation > 0.02:
         print("    → OK:   Some separation but may need a similarity threshold.")
     else:
-        print("    → POOR: Little separation — embeddings may not handle this format gap well.")
+        print(
+            "    → POOR: Little separation — embeddings may not handle"
+            " this format gap well."
+        )
 
     print()
     print("=" * 70)
