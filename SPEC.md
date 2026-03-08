@@ -67,7 +67,7 @@ flowchart TB
         JOBS[(Jobs)]
         ITEMS[(Work Items)]
         ICACHE[("Cache\n(global)")]
-        EMB[(Embeddings)]
+        CAT[(catalog_items)]
     end
 
     subgraph Output
@@ -88,7 +88,7 @@ flowchart TB
     AGENT -.-> OR
     CS_LINK -.-> CS
     FAST -.-> CS
-    CS -.-> EMB
+    CS -.-> CAT
     CP1 -.-> ITEMS
     CP2 -.-> ITEMS
     CACHE -.-> ICACHE
@@ -105,7 +105,7 @@ flowchart TB
 | Ingredient extraction | **Yes** (LLM) | Structured output (Pydantic, `min_length=1`), temperature 0, grounded in recipe text only |
 | Quantity estimation | **Yes** (LLM) | Structured output, derived from recipe serving sizes |
 | Cache-hit fast path | No | Orchestrator resolves in Python — zero LLM cost |
-| Matching agent — search | **Yes** (embeddings) | Cosine similarity over catalog embeddings, top-5 candidates |
+| Matching agent — search | **Yes** (embeddings) | Cosine similarity over `catalog_items` (pgvector), top-5 candidates |
 | Matching agent — evaluation | **Yes** (LLM) | Must select from provided candidates or declare not_available |
 | Matching agent — pricing | No (tool) | LLM interprets UOM string + arithmetic |
 | Matching agent — cache write | No (tool) | Postgres upsert, non-fatal on failure |
@@ -149,7 +149,7 @@ flowchart TB
   - Given the system needs to search across all providers or price an item,
   - When any component queries the catalog,
   - Then it uses the Catalog Service — a unified API over the `catalog_items` pgvector table:
-    - `search(query: str, top_k: int = 5) → list[CatalogCandidate]` — embeds the query, executes a pgvector cosine distance SQL query (`ORDER BY embedding <=> $1 LIMIT top_k`), and returns enriched candidates with description, unit_of_measure, cost_per_case, provider, and similarity_score directly from the table. No post-search provider lookup is performed.
+    - `search(query: str, top_k: int = 5) → list[CatalogCandidate]` — embeds the query, executes a pgvector cosine distance SQL query (`ORDER BY embedding <=> $1 LIMIT top_k`), and returns enriched candidates with description, unit_of_measure, cost_per_case, category, brand, provider, and similarity_score directly from the table. No post-search provider lookup is performed.
     - `get_price(source_item_id: str, provider: str) → PriceResult` — delegates to the named provider for a fresh price. Used by the cache fast path and on-demand pricing.
     - `ingest(provider_name: str) → None` — the ETL pipeline: loads the provider via `load_catalog()`, embeds all descriptions in batches, soft-deletes existing rows for that provider (`is_active = FALSE`), then upserts new rows into `catalog_items` with `is_active = TRUE`. Replaces `embed_catalog()`. Can be run per-provider at any time without affecting other providers.
     - `has_embeddings() → bool` — async; returns True if at least one active row exists in `catalog_items`.
@@ -416,7 +416,7 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 - LLM via OpenRouter (`openrouter:model-name`). Temperature 0.
 - LLM used in two operations: (1) ingredient extraction from recipe, (2) catalog matching for cache-miss ingredients only.
 - Exa API for recipe retrieval. Programmatic queries. Fallback to LLM-only on failure.
-- Embedding: text-embedding-3-small. All catalog items embedded at startup.
+- Embedding: text-embedding-3-small. Embeddings are generated during `ingest()` and persist in the `catalog_items` table across restarts — startup does not re-embed.
 
 ### Data & Persistence
 - Postgres (Render free tier / Docker local) for everything: jobs, checkpoints, cache, and catalog.
@@ -483,7 +483,7 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 
 3. **Decomposition engine** — depends on persistence (writes checkpoints) but NOT on the catalog layer. Can be built and tested independently with mocked Exa responses.
 
-4. **Resolution engine** — depends on persistence (reads/writes cache, writes checkpoints) AND catalog layer (search, get_price). Uses `source_item_id` throughout. The cache fast path calls `get_price(source_item_id, provider)` for fresh pricing. The matching agent receives enriched candidates from `search()`.
+4. **Resolution engine** — depends on persistence (reads/writes cache, writes checkpoints) AND catalog layer (search, get_price). Uses `source_item_id` throughout — including renaming `IngredientMatch.sysco_item_number` to `source_item_id`. The cache fast path calls `get_price(source_item_id, provider)` for fresh pricing. The matching agent receives enriched candidates from `search()`.
 
 **Wiring (connect the foundation):**
 
@@ -537,12 +537,14 @@ All identified risks have been derisked:
 - **Spec behaviors satisfied:** CatalogProviderInterface, CatalogParseFailure
 - **Acceptance condition:** `load_catalog()` parses `sysco_catalog.csv` and returns a list of catalog items (item_number, description, uom, cost_per_case). `get_price(item_number)` returns cost and UOM for a valid item, raises for an unknown item. A test loads the real CSV and verifies item count (565), spot-checks known items, and confirms get_price returns correct values.
   A test with a CSV containing one malformed row verifies the row is skipped with a warning and remaining rows are loaded.
+  *Note: This task describes the original implementation. Task 15 supersedes it — migrating `item_number` → `source_item_id`, `uom` → `unit_of_measure`, and introducing the full `CatalogRecord` shape.*
 - **Depends on:** none
 
 ### Task 3: Build the Catalog Service with embedding search
 
 - **Spec behaviors satisfied:** CatalogServiceInterface, EmbeddingIndex
 - **Acceptance condition:** `embed_catalog()` loads all provider items, embeds descriptions via text-embedding-3-small, and stores embeddings in Postgres. `search("applewood smoked bacon")` returns top-5 candidates with the correct Sysco item at rank 1. `get_price(item_number, provider)` delegates to the correct provider and returns cost + UOM. A test verifies search quality against 5+ known ingredient-to-catalog pairs from the embedding test results.
+  *Note: This task describes the original implementation. Task 16 supersedes it — replacing `embed_catalog()` with `ingest()`, renaming `item_number` → `source_item_id`, and the `EmbeddingIndex` behavior is now `UnifiedCatalogIndex`.*
 - **Depends on:** Tasks 1, 2
 
 ### Task 4: Build the decomposition engine (Exa + LLM extraction)
@@ -604,8 +606,10 @@ All identified risks have been derisked:
 ### Task 12: Build the frontend (The Pass view)
 
 - **Spec behaviors satisfied:** The Pass View
-- **Acceptance condition:** A React page showing the final quote. Summary header with event name, total items, total cost. Expandable line item cards — collapsed shows item name + cost, expanded shows ingredient table with name, quantity, unit cost, source badge (Catalog/Estimated/86'd), catalog item number. Export as JSON button. Prices use tabular-nums monospace, right-aligned.
+- **Acceptance condition:** A React page showing the final quote. Summary header with event name, total items, total cost. Expandable line item cards — collapsed shows item name + cost, expanded shows ingredient table with name, quantity, unit cost, source badge (Catalog/Estimated/86'd), `source_item_id`. Export as JSON button. Prices use tabular-nums monospace, right-aligned.
 - **Depends on:** Tasks 8, 10
+
+*Task 13 was renumbered to Task 20 (Deploy to Render). Tasks 14-19 are Phase 4: Multi-Source Catalog Redesign.*
 
 ### Task 14: Schema migration — catalog_items table and source_item_id rename
 
@@ -618,7 +622,7 @@ All identified risks have been derisked:
   5. Adds partial index on `is_active WHERE is_active = TRUE`
   6. Renames `ingredient_cache.sysco_item_number` column → `source_item_id`
   7. All statements are idempotent (`IF NOT EXISTS`, `IF EXISTS`, `DO $$ ... EXCEPTION WHEN ...`)
-  SQLAlchemy model `CatalogEmbedding` is renamed to `CatalogItem` with all new columns. `IngredientCache.sysco_item_number` is renamed to `source_item_id`. Tests verify: (1) `CatalogItem` model can be inserted with all fields including source_metadata JSONB, (2) `IngredientCache` model uses `source_item_id`, (3) composite unique constraint on `(provider, source_item_id)` prevents duplicates.
+  SQLAlchemy model `CatalogEmbedding` is renamed to `CatalogItem` (the ORM/table model — distinct from the `CatalogRecord` provider-side type introduced in Task 15) with all new columns. `IngredientCache.sysco_item_number` is renamed to `source_item_id`. Tests verify: (1) `CatalogItem` model can be inserted with all fields including source_metadata JSONB, (2) `IngredientCache` model uses `source_item_id`, (3) composite unique constraint on `(provider, source_item_id)` prevents duplicates.
 - **Depends on:** Task 1
 
 ### Task 15: Provider contract — CatalogRecord and SyscoCsvProvider update
@@ -648,7 +652,7 @@ All identified risks have been derisked:
 ### Task 19: Re-ingestion and end-to-end validation
 
 - **Spec behaviors satisfied:** (integration validation — all behaviors)
-- **Acceptance condition:** Run `ingest("sysco")` against the live Docker Postgres to populate `catalog_items` with all 565 items including UOM, cost, category, brand, and source_metadata. Verify: (1) all 565 items are active in `catalog_items`, (2) `search("heavy cream")` returns candidates with non-empty `unit_of_measure` and `cost_per_case`, (3) full end-to-end curl test (submit menu → poll → get quote) passes with `source_item_id` in the quote output, (4) no references to `sysco_item_number`, `item_number`, `CatalogItem`, `embed_catalog`, `load_embeddings`, or `catalog_embeddings` remain in source code (excluding alembic migration history). Documented: "No pytest test — validated by integration curl tests and grep verification."
+- **Acceptance condition:** Run `ingest("sysco")` against the live Docker Postgres to populate `catalog_items` with all 565 items including UOM, cost, category, brand, and source_metadata. Verify: (1) all 565 items are active in `catalog_items`, (2) `search("heavy cream")` returns candidates with non-empty `unit_of_measure` and `cost_per_case`, (3) full end-to-end curl test (submit menu → poll → get quote) passes with `source_item_id` in the quote output, (4) no references to `sysco_item_number`, `item_number`, `CatalogItem`, `embed_catalog`, `load_embeddings`, or `catalog_embeddings` remain in source code (excluding Alembic migration history and historical Task descriptions in SPEC.md). Documented: "No pytest test — validated by integration curl tests and grep verification."
 - **Depends on:** Task 18
 
 ### Task 20: Deploy to Render
@@ -659,4 +663,5 @@ All identified risks have been derisked:
 
 ## Open Questions
 
-None.
+1. **Re-ingestion during live traffic** — if `ingest("sysco")` runs while jobs are actively searching, there is a window where old rows are soft-deleted but new rows aren't yet upserted. Is this acceptable for the prototype? (Likely yes — prototype runs single-user.)
+2. **Startup behavior when catalog is empty** — if `has_embeddings()` returns False at startup, does the API block until `ingest()` completes, or reject job submissions until the catalog is ready? Current implementation blocks startup.
