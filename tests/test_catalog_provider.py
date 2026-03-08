@@ -8,8 +8,8 @@ import tempfile
 import pytest
 
 from yes_chef.catalog.provider import (
-    CatalogItem,
     CatalogProvider,
+    CatalogRecord,
     ItemNotFoundError,
     PriceResult,
     SyscoCsvProvider,
@@ -27,7 +27,7 @@ def provider() -> SyscoCsvProvider:
 def test_load_catalog_returns_items(provider: SyscoCsvProvider) -> None:
     items = provider.load_catalog()
     assert len(items) > 0
-    assert all(isinstance(item, CatalogItem) for item in items)
+    assert all(isinstance(item, CatalogRecord) for item in items)
 
 
 def test_load_catalog_item_count(provider: SyscoCsvProvider) -> None:
@@ -37,14 +37,20 @@ def test_load_catalog_item_count(provider: SyscoCsvProvider) -> None:
 
 def test_load_catalog_spot_check(provider: SyscoCsvProvider) -> None:
     items = provider.load_catalog()
-    by_number = {item.item_number: item for item in items}
+    by_number = {item.source_item_id: item for item in items}
 
     # First row: Sysco Item Number 2867825
     item = by_number["2867825"]
+    assert item.source_item_id == "2867825"
     assert "BEEF" in item.description
     assert "TENDERLOIN" in item.description
     assert item.unit_of_measure == "2/6.5 LB"
     assert abs(item.cost_per_case - 289.50) < 0.01
+    assert item.provider == "sysco"
+    assert item.brand is not None
+    assert item.source_metadata is not None
+    assert "contract_item_number" in item.source_metadata
+    assert "aasis_item_number" in item.source_metadata
 
 
 def test_get_price_valid_item(provider: SyscoCsvProvider) -> None:
@@ -59,6 +65,18 @@ def test_get_price_unknown_item(provider: SyscoCsvProvider) -> None:
     provider.load_catalog()
     with pytest.raises(ItemNotFoundError):
         provider.get_price("NONEXISTENT_ITEM_000")
+
+
+def test_provider_name_property(provider: SyscoCsvProvider) -> None:
+    assert provider.name == "sysco"
+
+
+def test_source_metadata_preserved(provider: SyscoCsvProvider) -> None:
+    items = provider.load_catalog()
+    item = next(i for i in items if i.source_item_id == "2867825")
+    assert item.source_metadata is not None
+    assert "contract_item_number" in item.source_metadata
+    assert "aasis_item_number" in item.source_metadata
 
 
 def test_load_catalog_malformed_row(caplog: pytest.LogCaptureFixture) -> None:
@@ -123,3 +141,4 @@ def test_catalog_provider_protocol() -> None:
     assert isinstance(prov, CatalogProvider)
     assert hasattr(prov, "load_catalog")
     assert hasattr(prov, "get_price")
+    assert hasattr(prov, "name")

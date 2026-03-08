@@ -9,15 +9,19 @@ logger = logging.getLogger(__name__)
 
 
 class ItemNotFoundError(KeyError):
-    """Raised when an item_number is not found in the catalog."""
+    """Raised when a source_item_id is not found in the catalog."""
 
 
 @dataclass(frozen=True)
-class CatalogItem:
-    item_number: str
+class CatalogRecord:
+    source_item_id: str
+    provider: str
     description: str
     unit_of_measure: str
     cost_per_case: float
+    category: str | None = None
+    brand: str | None = None
+    source_metadata: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -28,9 +32,12 @@ class PriceResult:
 
 @runtime_checkable
 class CatalogProvider(Protocol):
-    def load_catalog(self) -> list[CatalogItem]: ...
+    @property
+    def name(self) -> str: ...
 
-    def get_price(self, item_number: str) -> PriceResult: ...
+    def load_catalog(self) -> list[CatalogRecord]: ...
+
+    def get_price(self, source_item_id: str) -> PriceResult: ...
 
 
 def _parse_cost(raw: str) -> float:
@@ -44,7 +51,7 @@ class SyscoCsvProvider:
     CSV columns (0-indexed):
         0: Contract Item #
         1: AASIS Item #
-        2: Sysco Item Number   <- item_number key
+        2: Sysco Item Number   <- source_item_id key
         3: Brand
         4: Product Description <- description
         5: Unit of Measure     <- unit_of_measure
@@ -53,10 +60,14 @@ class SyscoCsvProvider:
 
     def __init__(self, csv_path: str) -> None:
         self._csv_path = csv_path
-        self._items: dict[str, CatalogItem] = {}
+        self._items: dict[str, CatalogRecord] = {}
 
-    def load_catalog(self) -> list[CatalogItem]:
-        """Parse the CSV and return a list of CatalogItem objects.
+    @property
+    def name(self) -> str:
+        return "sysco"
+
+    def load_catalog(self) -> list[CatalogRecord]:
+        """Parse the CSV and return a list of CatalogRecord objects.
 
         Malformed rows are skipped with a warning.
         """
@@ -78,11 +89,19 @@ class SyscoCsvProvider:
                     continue
 
                 try:
-                    item = CatalogItem(
-                        item_number=row[2].strip(),
+                    brand_raw = row[3].strip()
+                    item = CatalogRecord(
+                        source_item_id=row[2].strip(),
+                        provider="sysco",
                         description=row[4].strip(),
                         unit_of_measure=row[5].strip(),
                         cost_per_case=_parse_cost(row[6]),
+                        category=None,
+                        brand=brand_raw if brand_raw else None,
+                        source_metadata={
+                            "contract_item_number": row[0].strip(),
+                            "aasis_item_number": row[1].strip(),
+                        },
                     )
                 except (ValueError, IndexError) as exc:
                     logger.warning(
@@ -93,19 +112,19 @@ class SyscoCsvProvider:
                     )
                     continue
 
-                self._items[item.item_number] = item
+                self._items[item.source_item_id] = item
 
         return list(self._items.values())
 
-    def get_price(self, item_number: str) -> PriceResult:
-        """Return pricing for the given item_number.
+    def get_price(self, source_item_id: str) -> PriceResult:
+        """Return pricing for the given source_item_id.
 
-        Raises ItemNotFoundError if item_number is not in the loaded catalog.
+        Raises ItemNotFoundError if source_item_id is not in the loaded catalog.
         Call load_catalog() before calling get_price().
         """
-        item = self._items.get(item_number)
+        item = self._items.get(source_item_id)
         if item is None:
-            raise ItemNotFoundError(item_number)
+            raise ItemNotFoundError(source_item_id)
         return PriceResult(
             cost_per_case=item.cost_per_case,
             unit_of_measure=item.unit_of_measure,
