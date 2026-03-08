@@ -2,11 +2,13 @@ import os
 import uuid
 
 import numpy as np
+import pytest
 import pytest_asyncio
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from yes_chef.db.models import Base, CatalogEmbedding, IngredientCache, Job, WorkItem
+from yes_chef.db.models import Base, CatalogItem, IngredientCache, Job, WorkItem
 
 TEST_DB_URL = os.environ.get(
     "DATABASE_URL",
@@ -119,7 +121,7 @@ async def test_work_item_failure(session: AsyncSession):
 async def test_cache_upsert(session: AsyncSession):
     entry = IngredientCache(
         ingredient_name="chicken breast",
-        sysco_item_number="SYS-001",
+        source_item_id="SYS-001",
         source="sysco_catalog",
         provider="sysco",
     )
@@ -132,10 +134,10 @@ async def test_cache_upsert(session: AsyncSession):
         text(
             """
             INSERT INTO ingredient_cache
-                (id, ingredient_name, sysco_item_number, source, provider)
-            VALUES (:id, :name, :sysco, :source, :provider)
+                (id, ingredient_name, source_item_id, source, provider)
+            VALUES (:id, :name, :source_id, :source, :provider)
             ON CONFLICT (ingredient_name) DO UPDATE
-            SET sysco_item_number = EXCLUDED.sysco_item_number,
+            SET source_item_id = EXCLUDED.source_item_id,
                 source = EXCLUDED.source,
                 provider = EXCLUDED.provider
             """
@@ -143,7 +145,7 @@ async def test_cache_upsert(session: AsyncSession):
         {
             "id": str(uuid.uuid4()),
             "name": "chicken breast",
-            "sysco": "SYS-002-UPDATED",
+            "source_id": "SYS-002-UPDATED",
             "source": "estimated",
             "provider": "internal",
         },
@@ -158,7 +160,7 @@ async def test_cache_upsert(session: AsyncSession):
     )
     fetched = result.scalar_one()
     assert fetched.id == original_id
-    assert fetched.sysco_item_number == "SYS-002-UPDATED"
+    assert fetched.source_item_id == "SYS-002-UPDATED"
     assert fetched.source == "estimated"
     assert fetched.provider == "internal"
 
@@ -169,7 +171,7 @@ async def test_cache_normalized_key(session: AsyncSession):
 
     entry = IngredientCache(
         ingredient_name=normalized,
-        sysco_item_number="SYS-100",
+        source_item_id="SYS-100",
         source="sysco_catalog",
         provider="sysco",
     )
@@ -183,30 +185,72 @@ async def test_cache_normalized_key(session: AsyncSession):
     )
     fetched = result.scalar_one()
     assert fetched.ingredient_name == "beef tenderloin"
-    assert fetched.sysco_item_number == "SYS-100"
+    assert fetched.source_item_id == "SYS-100"
 
 
-async def test_catalog_embedding(session: AsyncSession):
-    # Create a 1536-dim vector
+async def test_catalog_item(session: AsyncSession):
     arr = np.random.rand(1536).astype(np.float32).tolist()
 
-    record = CatalogEmbedding(
-        item_number="CAT-9999",
+    record = CatalogItem(
+        source_item_id="CAT-9999",
         description="Premium Wagyu Beef",
         provider="sysco",
         embedding=arr,
+        unit_of_measure="6/1 GAL",
+        cost_per_case=45.99,
+        category="dairy",
+        brand="Land O Lakes",
+        source_metadata={"contract_number": "ABC-123", "aasis_number": "12345"},
     )
     session.add(record)
     await session.flush()
 
     result = await session.execute(
-        select(CatalogEmbedding).where(CatalogEmbedding.item_number == "CAT-9999")
+        select(CatalogItem).where(CatalogItem.source_item_id == "CAT-9999")
     )
     fetched = result.scalar_one()
-    assert fetched.item_number == "CAT-9999"
+    assert fetched.source_item_id == "CAT-9999"
     assert fetched.description == "Premium Wagyu Beef"
     assert fetched.provider == "sysco"
+    assert fetched.unit_of_measure == "6/1 GAL"
+    assert fetched.cost_per_case == 45.99
+    assert fetched.category == "dairy"
+    assert fetched.brand == "Land O Lakes"
+    assert fetched.source_metadata == {
+        "contract_number": "ABC-123",
+        "aasis_number": "12345",
+    }
+    assert fetched.is_active is True
+    assert fetched.ingested_at is not None
 
-    # pgvector returns a numpy array or list
     recovered = np.array(fetched.embedding, dtype=np.float32)
     np.testing.assert_array_almost_equal(recovered, arr, decimal=5)
+
+
+async def test_catalog_item_composite_unique(session: AsyncSession):
+    """Composite unique on (provider, source_item_id) prevents duplicates."""
+    arr = np.random.rand(1536).astype(np.float32).tolist()
+
+    item1 = CatalogItem(
+        source_item_id="DUP-001",
+        description="First item",
+        provider="sysco",
+        embedding=arr,
+        unit_of_measure="1/EA",
+        cost_per_case=10.0,
+    )
+    session.add(item1)
+    await session.flush()
+
+    item2 = CatalogItem(
+        source_item_id="DUP-001",
+        description="Duplicate",
+        provider="sysco",
+        embedding=arr,
+        unit_of_measure="1/EA",
+        cost_per_case=20.0,
+    )
+    session.add(item2)
+    with pytest.raises(IntegrityError):
+        await session.flush()
+    await session.rollback()

@@ -163,9 +163,9 @@ class CatalogService:
                     CatalogEmbedding.item_number,
                     CatalogEmbedding.description,
                     CatalogEmbedding.provider,
-                    (
-                        1 - CatalogEmbedding.embedding.cosine_distance(query_vec)
-                    ).label("similarity"),
+                    (1 - CatalogEmbedding.embedding.cosine_distance(query_vec)).label(
+                        "similarity"
+                    ),
                 )
                 .order_by(CatalogEmbedding.embedding.cosine_distance(query_vec))
                 .limit(top_k)

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Index, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, func, text
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -72,7 +72,7 @@ class IngredientCache(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     ingredient_name: Mapped[str] = mapped_column(String, nullable=False)
-    sysco_item_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_item_id: Mapped[str | None] = mapped_column(String, nullable=True)
     source: Mapped[str] = mapped_column(String, nullable=False)
     provider: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -87,20 +87,42 @@ class IngredientCache(Base):
     )
 
 
-class CatalogEmbedding(Base):
-    __tablename__ = "catalog_embeddings"
+class CatalogItem(Base):
+    __tablename__ = "catalog_items"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    item_number: Mapped[str] = mapped_column(String, nullable=False)
+    source_item_id: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
     provider: Mapped[str] = mapped_column(String, nullable=False)
     embedding: Mapped[list] = mapped_column(Vector(1536), nullable=False)
+    unit_of_measure: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=""
+    )
+    cost_per_case: Mapped[float] = mapped_column(nullable=False, server_default="0")
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
+    brand: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_metadata: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     __table_args__ = (
-        Index("ix_catalog_embeddings_item_number", "item_number", unique=True),
+        Index(
+            "ix_catalog_items_provider_source_item_id",
+            "provider",
+            "source_item_id",
+            unique=True,
+        ),
+        Index("ix_catalog_items_provider", "provider"),
+        Index(
+            "ix_catalog_items_is_active",
+            "is_active",
+            postgresql_where=text("is_active = TRUE"),
+        ),
     )
