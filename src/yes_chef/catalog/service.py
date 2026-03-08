@@ -88,10 +88,18 @@ class CatalogService:
     ) -> None:
         self._providers = providers
         self._session_factory = session_factory
-        self._embed_fn: EmbedFn = embed_fn or _make_openai_embed_fn()
+        # Stored as-is; lazily resolved on first use so no API key is required
+        # at construction time (e.g. when only load_embeddings() will be called).
+        self._embed_fn: EmbedFn | None = embed_fn
 
         # In-memory index: item_number → (embedding, description, uom, provider)
         self._index: dict[str, tuple[np.ndarray, str, str, str]] = {}
+
+    def _get_embed_fn(self) -> EmbedFn:
+        """Return the embed function, building the OpenAI default on first use."""
+        if self._embed_fn is None:
+            self._embed_fn = _make_openai_embed_fn()
+        return self._embed_fn
 
     async def embed_catalog(self) -> None:
         """Embed all catalog items and store in the DB.
@@ -120,7 +128,7 @@ class CatalogService:
         all_embeddings: list[np.ndarray] = []
         for i in range(0, len(descriptions), _DEFAULT_BATCH_SIZE):
             batch = descriptions[i : i + _DEFAULT_BATCH_SIZE]
-            batch_embeddings = await self._embed_fn(batch)
+            batch_embeddings = await self._get_embed_fn()(batch)
             all_embeddings.extend(batch_embeddings)
             logger.debug(
                 "Embedded batch %d/%d",
@@ -191,7 +199,7 @@ class CatalogService:
             )
 
         # Embed the query (single item)
-        query_embeddings = await self._embed_fn([query])
+        query_embeddings = await self._get_embed_fn()([query])
         query_vec = query_embeddings[0]
 
         # Build matrix of all stored embeddings for vectorized similarity
