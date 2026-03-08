@@ -15,6 +15,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -257,12 +258,38 @@ def run_test(
 
     url = base_url.rstrip("/") + path
 
-    try:
-        status_code, response_body, response_headers = run_curl(
-            method, url, headers, body
-        )
-    except Exception as exc:
-        return False, f"  curl error: {exc}", None
+    # Optional polling: retry until expected status matches or timeout
+    poll_config = test.get("poll")
+    if poll_config:
+        poll_interval = poll_config.get("interval", 3)
+        poll_timeout = poll_config.get("timeout", 60)
+        expected_status = test.get("expect", {}).get("status")
+        start = time.time()
+        status_code, response_body, response_headers = 0, None, {}
+        while True:
+            try:
+                status_code, response_body, response_headers = run_curl(
+                    method, url, headers, body
+                )
+            except Exception as exc:
+                return False, f"  curl error: {exc}", None
+            if expected_status is None or status_code == expected_status:
+                break
+            elapsed = time.time() - start
+            if elapsed >= poll_timeout:
+                break
+            print(
+                f"    polling… (status={status_code}, elapsed={elapsed:.0f}s)",
+                flush=True,
+            )
+            time.sleep(poll_interval)
+    else:
+        try:
+            status_code, response_body, response_headers = run_curl(
+                method, url, headers, body
+            )
+        except Exception as exc:
+            return False, f"  curl error: {exc}", None
 
     failures: list[str] = []
 

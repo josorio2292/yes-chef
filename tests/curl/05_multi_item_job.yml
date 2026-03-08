@@ -1,0 +1,50 @@
+- name: Submit multi-category menu
+  request:
+    method: POST
+    url: /jobs
+    headers:
+      Content-Type: application/json
+    body:
+      event: "Wedding Reception"
+      date: "2025-06-15"
+      venue: "Garden Pavilion"
+      guest_count_estimate: 200
+      categories:
+        appetizers:
+          - name: "Caprese Skewers"
+            description: "Cherry tomatoes, fresh mozzarella, and basil on skewers with balsamic glaze"
+            service_style: "passed"
+        main_plates:
+          - name: "Herb Crusted Salmon"
+            description: "Atlantic salmon with a Dijon herb crust, served with roasted vegetables"
+        desserts:
+          - name: "Chocolate Lava Cake"
+            description: "Warm chocolate cake with molten center, served with vanilla ice cream"
+  expect:
+    status: 201
+    body:
+      job_id: any_uuid
+
+- name: Verify all items created
+  depends_on: "Submit multi-category menu"
+  request:
+    method: GET
+    url: /jobs/${prev.job_id}
+  expect:
+    status: 200
+    body:
+      total_items: 3
+
+- name: Wait for multi-item quote
+  depends_on: "Submit multi-category menu"
+  poll:
+    interval: 5
+    timeout: 180
+  request:
+    method: GET
+    url: /jobs/${prev.job_id}/quote
+  expect:
+    status: 200
+    body:
+      event: "Wedding Reception"
+      quote_id: any_uuid

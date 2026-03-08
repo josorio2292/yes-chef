@@ -1,0 +1,23 @@
+- name: Submit with empty body
+  request:
+    method: POST
+    url: /jobs
+    headers:
+      Content-Type: application/json
+    body: {}
+  expect:
+    status: 422
+
+- name: Get non-existent job
+  request:
+    method: GET
+    url: /jobs/00000000-0000-0000-0000-000000000000
+  expect:
+    status: 404
+
+- name: Get quote for non-existent job
+  request:
+    method: GET
+    url: /jobs/00000000-0000-0000-0000-000000000000/quote
+  expect:
+    status: 404

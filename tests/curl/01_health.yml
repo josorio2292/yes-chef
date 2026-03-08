@@ -5,4 +5,4 @@ request:
 expect:
   status: 200
   body:
-    status: any_string
+    status: "ok"

@@ -1,0 +1,33 @@
+- name: Submit a simple job for quote
+  request:
+    method: POST
+    url: /jobs
+    headers:
+      Content-Type: application/json
+    body:
+      event: "Team Lunch"
+      date: "2025-04-01"
+      venue: "Office Kitchen"
+      guest_count_estimate: 20
+      categories:
+        main_plates:
+          - name: "Grilled Chicken Caesar Salad"
+            description: "Grilled chicken breast over romaine lettuce with Caesar dressing, croutons, and parmesan"
+  expect:
+    status: 201
+    body:
+      job_id: any_uuid
+
+- name: Wait for job to complete then get quote
+  depends_on: "Submit a simple job for quote"
+  poll:
+    interval: 5
+    timeout: 120
+  request:
+    method: GET
+    url: /jobs/${prev.job_id}/quote
+  expect:
+    status: 200
+    body:
+      quote_id: any_uuid
+      event: "Team Lunch"
