@@ -18,6 +18,7 @@ TEST_DB_URL = os.environ.get(
 async def engine():
     eng = create_async_engine(TEST_DB_URL, echo=False)
     async with eng.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield eng
@@ -186,14 +187,14 @@ async def test_cache_normalized_key(session: AsyncSession):
 
 
 async def test_catalog_embedding(session: AsyncSession):
-    arr = np.array([0.1, 0.2, 0.3, 0.4, 0.5], dtype=np.float32)
-    embedding_bytes = arr.tobytes()
+    # Create a 1536-dim vector
+    arr = np.random.rand(1536).astype(np.float32).tolist()
 
     record = CatalogEmbedding(
         item_number="CAT-9999",
         description="Premium Wagyu Beef",
         provider="sysco",
-        embedding=embedding_bytes,
+        embedding=arr,
     )
     session.add(record)
     await session.flush()
@@ -206,5 +207,6 @@ async def test_catalog_embedding(session: AsyncSession):
     assert fetched.description == "Premium Wagyu Beef"
     assert fetched.provider == "sysco"
 
-    recovered = np.frombuffer(fetched.embedding, dtype=np.float32)
-    np.testing.assert_array_almost_equal(recovered, arr)
+    # pgvector returns a numpy array or list
+    recovered = np.array(fetched.embedding, dtype=np.float32)
+    np.testing.assert_array_almost_equal(recovered, arr, decimal=5)

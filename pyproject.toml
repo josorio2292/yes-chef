@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28.1",
     "numpy>=2.4.2",
     "openai>=2.26.0",
+    "pgvector>=0.4.2",
     "pydantic-ai>=1.67.0",
     "sqlalchemy[asyncio]>=2.0.48",
     "uvicorn[standard]>=0.41.0",

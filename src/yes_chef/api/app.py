@@ -179,16 +179,13 @@ def create_app(
                 providers={"sysco": sysco},
                 session_factory=application.state.session_factory,
             )
-            await catalog.load_embeddings()
-            if not catalog.has_embeddings:
+            if not await catalog.has_embeddings():
                 logger.info(
                     "No embeddings found in DB — running embed_catalog() for first run…"
                 )
                 await catalog.embed_catalog()
             else:
-                logger.info(
-                    "Embeddings loaded from DB (%d items).", len(catalog._index)
-                )
+                logger.info("Embeddings already in DB — skipping embed_catalog().")
             application.state.orchestrator = Orchestrator(
                 session_factory=application.state.session_factory,
                 catalog_service=catalog,

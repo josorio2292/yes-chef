@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, LargeBinary, String, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -95,7 +96,7 @@ class CatalogEmbedding(Base):
     item_number: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
     provider: Mapped[str] = mapped_column(String, nullable=False)
-    embedding: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    embedding: Mapped[list] = mapped_column(Vector(1536), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

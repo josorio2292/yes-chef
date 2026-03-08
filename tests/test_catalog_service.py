@@ -1,4 +1,4 @@
-"""Tests for the CatalogService with embedding search."""
+"""Tests for the CatalogService with pgvector-based embedding search."""
 
 import hashlib
 import pathlib
@@ -93,10 +93,17 @@ async def _smart_embed_batch(texts: list[str]) -> list[np.ndarray]:
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def catalog_engine():
     eng = create_async_engine(TEST_DB_URL, echo=False)
+
     async with eng.begin() as conn:
+        # Enable pgvector extension before creating tables.
+        # The pgvector.sqlalchemy.Vector type uses the text wire protocol, so
+        # no asyncpg binary codec registration is required.
+        await conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+
     yield eng
+
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await eng.dispose()
@@ -119,6 +126,35 @@ def sysco_provider():
 @pytest.fixture(scope="session")
 def providers(sysco_provider):
     return {"sysco": sysco_provider}
+
+
+@pytest_asyncio.fixture(loop_scope="session", scope="session")
+async def catalog_service(providers, catalog_session_factory):
+    """Base CatalogService using fake embeddings."""
+    return CatalogService(
+        providers=providers,
+        session_factory=catalog_session_factory,
+        embed_fn=_fake_embed_batch,
+    )
+
+
+@pytest_asyncio.fixture(loop_scope="session", scope="session")
+async def embedded_catalog(catalog_service):
+    """CatalogService with embeddings already written to the test DB."""
+    await catalog_service.embed_catalog()
+    return catalog_service
+
+
+@pytest_asyncio.fixture(loop_scope="session", scope="session")
+async def smart_embedded_catalog(providers, catalog_session_factory):
+    """CatalogService with smart embeddings that guarantee correct ranking for known pairs."""  # noqa: E501
+    service = CatalogService(
+        providers=providers,
+        session_factory=catalog_session_factory,
+        embed_fn=_smart_embed_batch,
+    )
+    await service.embed_catalog()
+    return service
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -146,35 +182,25 @@ async def test_embed_catalog_stores_embeddings(
     assert count == 565
 
 
-async def test_search_returns_top_5(providers, catalog_session_factory) -> None:
-    """search() should return exactly 5 candidates sorted by score descending."""
-    service = CatalogService(
-        providers=providers,
-        session_factory=catalog_session_factory,
-        embed_fn=_fake_embed_batch,
-    )
-    await service.load_embeddings()
+async def test_has_embeddings_returns_true(embedded_catalog) -> None:
+    """has_embeddings() returns True when embeddings exist in the DB."""
+    assert await embedded_catalog.has_embeddings() is True
 
-    results = await service.search("bacon", top_k=5)
+
+async def test_search_returns_top_5(embedded_catalog) -> None:
+    """search() should return exactly 5 candidates sorted by score descending."""
+    results = await embedded_catalog.search("bacon", top_k=5)
 
     assert len(results) == 5
     assert all(isinstance(r, CatalogCandidate) for r in results)
 
-    # Scores must be descending
     scores = [r.similarity_score for r in results]
     assert scores == sorted(scores, reverse=True)
 
 
-async def test_search_correct_match(providers, catalog_session_factory) -> None:
+async def test_search_correct_match(smart_embedded_catalog) -> None:
     """search('applewood smoked bacon') must rank the bacon item first."""
-    service = CatalogService(
-        providers=providers,
-        session_factory=catalog_session_factory,
-        embed_fn=_smart_embed_batch,
-    )
-    await service.load_embeddings()
-
-    results = await service.search("applewood smoked bacon", top_k=5)
+    results = await smart_embedded_catalog.search("applewood smoked bacon", top_k=5)
 
     assert len(results) > 0
     top = results[0]
@@ -184,17 +210,10 @@ async def test_search_correct_match(providers, catalog_session_factory) -> None:
     )
 
 
-async def test_search_known_pairs(providers, catalog_session_factory) -> None:
+async def test_search_known_pairs(smart_embedded_catalog) -> None:
     """At least 5 known ingredient-to-catalog pairs must match at rank 1."""
-    service = CatalogService(
-        providers=providers,
-        session_factory=catalog_session_factory,
-        embed_fn=_smart_embed_batch,
-    )
-    await service.load_embeddings()
-
     for query, expected_item_number in KNOWN_PAIRS:
-        results = await service.search(query, top_k=5)
+        results = await smart_embedded_catalog.search(query, top_k=5)
         assert len(results) > 0, f"No results for query: {query!r}"
         top = results[0]
         assert top.item_number == expected_item_number, (
@@ -231,44 +250,3 @@ async def test_get_price_unknown_provider(providers, catalog_session_factory) ->
 
     with pytest.raises((ValueError, KeyError)):
         service.get_price("5614226", "unknown_provider")
-
-
-async def test_load_embeddings_from_db(providers, catalog_session_factory) -> None:
-    """After embed_catalog(), a new service instance must load from DB without
-    calling the embedding API, and search must still work.
-    """
-    call_count = 0
-
-    async def counting_embed(texts: list[str]) -> list[np.ndarray]:
-        nonlocal call_count
-        call_count += len(texts)
-        return [_text_to_vector(t) for t in texts]
-
-    # First service: embed catalog (records API calls for catalog items)
-    service1 = CatalogService(
-        providers=providers,
-        session_factory=catalog_session_factory,
-        embed_fn=counting_embed,
-    )
-    await service1.embed_catalog()
-
-    # Reset counter
-    call_count = 0
-
-    # Second service: load from DB only — should NOT call embed for catalog
-    service2 = CatalogService(
-        providers=providers,
-        session_factory=catalog_session_factory,
-        embed_fn=counting_embed,
-    )
-    await service2.load_embeddings()
-
-    # No catalog embedding calls during load_embeddings
-    assert call_count == 0, (
-        f"load_embeddings() made {call_count} embedding API calls "
-        "(should be 0 — loading from DB)"
-    )
-
-    # Search should still work (it WILL call embed for the query — that's fine)
-    results = await service2.search("bacon", top_k=5)
-    assert len(results) == 5
