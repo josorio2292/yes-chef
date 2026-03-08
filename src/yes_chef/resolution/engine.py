@@ -10,7 +10,8 @@ from uuid import UUID
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.test import TestModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from yes_chef.catalog.provider import ItemNotFoundError
 from yes_chef.catalog.service import CatalogCandidate, CatalogService
@@ -172,19 +173,25 @@ async def update_cache(
 
     async with ctx.deps.session_factory() as session:
         async with session.begin():
-            await session.execute(
-                delete(IngredientCache).where(
-                    IngredientCache.ingredient_name == normalized
-                )
-            )
-            session.add(
-                IngredientCache(
+            stmt = (
+                pg_insert(IngredientCache)
+                .values(
                     ingredient_name=normalized,
                     sysco_item_number=item_number,
                     source=source,
                     provider=provider,
                 )
+                .on_conflict_do_update(
+                    index_elements=["ingredient_name"],
+                    set_={
+                        "sysco_item_number": item_number,
+                        "source": source,
+                        "provider": provider,
+                        "updated_at": func.now(),
+                    },
+                )
             )
+            await session.execute(stmt)
 
     return f"Cached: {normalized} → {item_number} ({source})"
 
@@ -336,19 +343,25 @@ async def resolve_item(
             normalized = ingredient.name.lower().strip()
             async with session_factory() as session:
                 async with session.begin():
-                    await session.execute(
-                        delete(IngredientCache).where(
-                            IngredientCache.ingredient_name == normalized
-                        )
-                    )
-                    session.add(
-                        IngredientCache(
+                    stmt = (
+                        pg_insert(IngredientCache)
+                        .values(
                             ingredient_name=normalized,
                             sysco_item_number=match.sysco_item_number,
                             source=match.source,
                             provider=match.provider,
                         )
+                        .on_conflict_do_update(
+                            index_elements=["ingredient_name"],
+                            set_={
+                                "sysco_item_number": match.sysco_item_number,
+                                "source": match.source,
+                                "provider": match.provider,
+                                "updated_at": func.now(),
+                            },
+                        )
                     )
+                    await session.execute(stmt)
         except Exception as exc:
             logger.error("Agent failed for %s: %s", ingredient.name, exc)
             # Partial failure — mark as not_available
