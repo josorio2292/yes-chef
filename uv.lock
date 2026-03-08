@@ -3333,6 +3333,8 @@ dependencies = [
     { name = "asyncpg" },
     { name = "exa-py" },
     { name = "httpx" },
+    { name = "numpy" },
+    { name = "openai" },
     { name = "pydantic-ai" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
@@ -3352,6 +3354,8 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "exa-py", specifier = ">=2.7.0" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "numpy", specifier = ">=2.4.2" },
+    { name = "openai", specifier = ">=2.26.0" },
     { name = "pydantic-ai", specifier = ">=1.67.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.48" },
 ]
