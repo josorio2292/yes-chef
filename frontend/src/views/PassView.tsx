@@ -1,46 +1,35 @@
-import { useState, useEffect } from 'react';
-import type { KeyboardEvent, SVGProps } from 'react';
-import './PassView.css';
-
-/* ─── Types ────────────────────────────────────────────────────────────────── */
-
-type IngredientSource = 'sysco_catalog' | 'estimated' | 'not_available';
-
-interface Ingredient {
-  name: string;
-  quantity: string;
-  unit_cost: number;
-  source: IngredientSource;
-  sysco_item_number?: string | null;
-}
-
-interface LineItem {
-  item_name: string;
-  category?: string;
-  ingredients: Ingredient[];
-  ingredient_cost_per_unit: number;
-}
-
-interface Quote {
-  quote_id: string;
-  event: string;
-  date?: string;
-  venue?: string;
-  generated_at?: string;
-  line_items: LineItem[];
-}
+import { useState } from 'react'
+import { useParams } from 'react-router-dom'
+import type { KeyboardEvent, SVGProps } from 'react'
+import { useQuote } from '../api'
+import type { Quote, LineItem, Ingredient } from '../schemas'
 
 /* ─── Source Badge ─────────────────────────────────────────────────────────── */
 
-const SOURCE_MAP: Record<string, { label: string; cls: string }> = {
-  sysco_catalog: { label: 'Catalog', cls: 'source-badge--catalog' },
-  estimated: { label: 'Estimated', cls: 'source-badge--estimated' },
-  not_available: { label: "86'd", cls: 'source-badge--eightysixed' },
-};
+type IngredientSource = 'sysco_catalog' | 'estimated' | 'not_available'
+
+const SOURCE_MAP: Record<IngredientSource, { label: string; className: string }> = {
+  sysco_catalog: {
+    label: 'Catalog',
+    className: 'bg-success-subtle text-success',
+  },
+  estimated: {
+    label: 'Estimated',
+    className: 'bg-warning-subtle text-warning',
+  },
+  not_available: {
+    label: "86'd",
+    className: 'bg-error-subtle text-error',
+  },
+}
 
 function SourceBadge({ source }: { source: string }) {
-  const { label, cls } = SOURCE_MAP[source] ?? { label: source, cls: '' };
-  return <span className={`source-badge ${cls}`}>{label}</span>;
+  const config = SOURCE_MAP[source as IngredientSource] ?? { label: source, className: 'bg-surface text-text-secondary' }
+  return (
+    <span className={`inline-block text-xs font-medium tracking-wide rounded-badge px-2 py-0.5 whitespace-nowrap ${config.className}`}>
+      {config.label}
+    </span>
+  )
 }
 
 /* ─── Ingredient Table ─────────────────────────────────────────────────────── */
@@ -48,120 +37,146 @@ function SourceBadge({ source }: { source: string }) {
 function IngredientTable({ ingredients }: { ingredients: Ingredient[] }) {
   if (!ingredients || ingredients.length === 0) {
     return (
-      <p style={{ padding: '12px 16px', color: 'var(--text-tertiary)', fontSize: 14, margin: 0 }}>
+      <p className="px-4 py-3 text-text-tertiary text-sm">
         No ingredients recorded.
       </p>
-    );
+    )
   }
 
   return (
-    <table className="ingredient-table" aria-label="Ingredients">
-      <thead className="ingredient-table__head">
+    <table className="w-full border-collapse text-sm" aria-label="Ingredients">
+      <thead className="bg-surface">
         <tr>
-          <th className="col-name">Ingredient</th>
-          <th className="col-qty">Quantity</th>
-          <th className="col-cost">Unit Cost</th>
-          <th className="col-source">Source</th>
-          <th className="col-catalog">Catalog #</th>
+          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-left border-b border-border-subtle whitespace-nowrap">
+            Ingredient
+          </th>
+          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-left border-b border-border-subtle whitespace-nowrap">
+            Quantity
+          </th>
+          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-right border-b border-border-subtle whitespace-nowrap">
+            Unit Cost
+          </th>
+          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-left border-b border-border-subtle whitespace-nowrap">
+            Source
+          </th>
+          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-right border-b border-border-subtle whitespace-nowrap">
+            Catalog #
+          </th>
         </tr>
       </thead>
-      <tbody className="ingredient-table__body">
+      <tbody>
         {ingredients.map((ing, idx) => (
-          <tr key={idx}>
-            <td className="col-name">{ing.name}</td>
-            <td className="col-qty">{ing.quantity}</td>
-            <td className="col-cost">{formatCurrency(ing.unit_cost)}</td>
-            <td className="col-source">
+          <tr key={idx} className="hover:bg-surface transition-colors duration-150 border-t border-border-subtle first:border-t-0">
+            <td className="px-4 py-2.5 text-text-primary min-w-[120px]">
+              {ing.name}
+            </td>
+            <td className="px-4 py-2.5 font-mono tabular-nums text-text-secondary whitespace-nowrap min-w-[80px]">
+              {ing.quantity}
+            </td>
+            <td className="px-4 py-2.5 font-mono tabular-nums text-text-primary text-right whitespace-nowrap min-w-[80px]">
+              {formatCurrency(ing.unit_cost)}
+            </td>
+            <td className="px-4 py-2.5 whitespace-nowrap min-w-[100px]">
               <SourceBadge source={ing.source} />
             </td>
-            <td className="col-catalog">
+            <td className="px-4 py-2.5 font-mono tabular-nums text-xs text-text-secondary text-right whitespace-nowrap min-w-[100px]">
               {ing.sysco_item_number ?? (
-                <span style={{ color: 'var(--text-muted)' }}>—</span>
+                <span className="text-text-muted">—</span>
               )}
             </td>
           </tr>
         ))}
       </tbody>
     </table>
-  );
+  )
 }
 
 /* ─── Line Item Card ───────────────────────────────────────────────────────── */
 
 function LineItemCard({ item }: { item: LineItem }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(false)
 
-  const toggleExpanded = () => setExpanded((prev) => !prev);
+  const toggleExpanded = () => setExpanded((prev) => !prev)
 
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpanded();
+      e.preventDefault()
+      toggleExpanded()
     }
-  };
+  }
 
   return (
     <article
-      className={`line-item${expanded ? ' line-item--expanded' : ''}`}
+      className="bg-surface-raised border border-border-subtle rounded-card shadow-sm overflow-hidden"
       aria-expanded={expanded}
     >
       <div
-        className="line-item__header"
+        className="flex items-center justify-between px-4 py-3.5 cursor-pointer select-none gap-3 transition-colors duration-150 hover:bg-surface"
         onClick={toggleExpanded}
         onKeyDown={handleKeyDown}
         role="button"
         tabIndex={0}
         aria-label={`${item.item_name} — ${expanded ? 'collapse' : 'expand'}`}
       >
-        <div className="line-item__header-left">
-          <span className="line-item__name">{item.item_name}</span>
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <span className="text-base font-medium text-text-primary whitespace-nowrap overflow-hidden text-ellipsis">
+            {item.item_name}
+          </span>
           {item.category && (
-            <span className="line-item__category">{item.category}</span>
+            <span className="shrink-0 inline-block text-xs font-medium tracking-wide text-text-secondary bg-inset border border-border-subtle rounded-badge px-2 py-0.5 capitalize whitespace-nowrap">
+              {item.category}
+            </span>
           )}
         </div>
 
-        <div className="line-item__header-right">
-          <span className="line-item__cost">
+        <div className="flex items-center gap-4 shrink-0">
+          <span className="font-mono tabular-nums text-sm text-text-primary text-right whitespace-nowrap">
             {formatCurrency(item.ingredient_cost_per_unit)}
           </span>
-          <ChevronDownIcon className="line-item__chevron" aria-hidden="true" />
+          <ChevronDownIcon
+            className={`w-4 h-4 text-text-tertiary shrink-0 transition-transform duration-200 ease-out ${expanded ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          />
         </div>
       </div>
 
-      <div className="line-item__body" aria-hidden={!expanded}>
-        <div className="line-item__body-inner">
+      <div
+        className={`overflow-hidden transition-all duration-200 ease-out ${expanded ? 'max-h-[600px]' : 'max-h-0'}`}
+        aria-hidden={!expanded}
+      >
+        <div className="border-t border-border-subtle">
           <IngredientTable ingredients={item.ingredients} />
         </div>
       </div>
     </article>
-  );
+  )
 }
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 
 function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return '—';
+  if (value == null) return '—'
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value);
+  }).format(value)
 }
 
 function formatDate(dateStr: string): string {
-  if (!dateStr) return '';
-  const d = new Date(dateStr + 'T00:00:00');
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
   return d.toLocaleDateString('en-US', {
     weekday: 'short',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-  });
+  })
 }
 
 function computeTotal(lineItems: LineItem[]): number {
-  return lineItems.reduce((sum, item) => sum + (item.ingredient_cost_per_unit ?? 0), 0);
+  return lineItems.reduce((sum, item) => sum + (item.ingredient_cost_per_unit ?? 0), 0)
 }
 
 /* ─── SVG Icons ────────────────────────────────────────────────────────────── */
@@ -183,7 +198,7 @@ function ChevronDownIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
     >
       <polyline points="6 9 12 15 18 9" />
     </svg>
-  );
+  )
 }
 
 function DownloadIcon() {
@@ -204,139 +219,101 @@ function DownloadIcon() {
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
-  );
+  )
 }
 
 /* ─── Export ───────────────────────────────────────────────────────────────── */
 
 function exportQuote(quote: Quote): void {
-  const blob = new Blob([JSON.stringify(quote, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `quote-${quote.quote_id ?? 'export'}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const blob = new Blob([JSON.stringify(quote, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `quote-${quote.quote_id ?? 'export'}.json`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 /* ─── Pass View ────────────────────────────────────────────────────────────── */
 
-interface PassViewProps {
-  /** Job ID — used to fetch from GET /jobs/{jobId}/quote */
-  jobId?: string;
-  /** Pass a pre-fetched quote directly (testing / integration) */
-  quote?: Quote;
-}
-
-export default function PassView({ jobId, quote: quoteProp }: PassViewProps) {
-  const [quote, setQuote] = useState<Quote | null>(quoteProp ?? null);
-  const [loading, setLoading] = useState(!quoteProp);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (quoteProp) {
-      setQuote(quoteProp);
-      setLoading(false);
-      return;
-    }
-
-    if (!jobId) {
-      setLoading(false);
-      setError('No job ID provided.');
-      return;
-    }
-
-    let cancelled = false;
-
-    async function fetchQuote() {
-      try {
-        const res = await fetch(`/jobs/${jobId}/quote`);
-        if (!res.ok) {
-          throw new Error(`Server returned ${res.status} ${res.statusText}`);
-        }
-        const data: Quote = await res.json();
-        if (!cancelled) {
-          setQuote(data);
-          setLoading(false);
-        }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load quote.');
-          setLoading(false);
-        }
-      }
-    }
-
-    fetchQuote();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [jobId, quoteProp]);
+export default function PassView() {
+  const { jobId } = useParams<{ jobId: string }>()
+  const { data: quote, isLoading, error } = useQuote(jobId ?? '', !!jobId)
 
   /* ── Loading ── */
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="pass-view">
-        <div className="pass-view__inner">
-          <p className="pass-view__loading">Loading quote…</p>
+      <div className="min-h-screen bg-canvas px-6 py-8">
+        <div className="max-w-[900px] mx-auto">
+          <p className="text-center py-16 text-text-tertiary text-sm">Loading quote…</p>
         </div>
       </div>
-    );
+    )
   }
 
   /* ── Error ── */
   if (error) {
     return (
-      <div className="pass-view">
-        <div className="pass-view__inner">
-          <p className="pass-view__error">{error}</p>
+      <div className="min-h-screen bg-canvas px-6 py-8">
+        <div className="max-w-[900px] mx-auto">
+          <p className="text-center py-16 text-error text-sm">
+            {error instanceof Error ? error.message : 'Failed to load quote.'}
+          </p>
         </div>
       </div>
-    );
+    )
   }
 
   /* ── Empty ── */
   if (!quote) {
     return (
-      <div className="pass-view">
-        <div className="pass-view__inner">
-          <p className="pass-view__empty">No quote available.</p>
+      <div className="min-h-screen bg-canvas px-6 py-8">
+        <div className="max-w-[900px] mx-auto">
+          <p className="text-center py-16 text-text-tertiary text-sm">No quote available.</p>
         </div>
       </div>
-    );
+    )
   }
 
-  const lineItems = quote.line_items ?? [];
-  const total = computeTotal(lineItems);
+  const lineItems = quote.line_items ?? []
+  const total = computeTotal(lineItems)
 
   return (
-    <main className="pass-view">
-      <div className="pass-view__inner">
+    <main className="min-h-screen bg-canvas px-6 pt-8 pb-12">
+      <div className="max-w-[900px] mx-auto flex flex-col gap-6">
 
         {/* ── Summary Header ── */}
-        <section className="pass-summary" aria-label="Quote summary">
-          <h1 className="pass-summary__event">{quote.event}</h1>
+        <section
+          className="bg-surface-raised border border-border-subtle rounded-card shadow-sm p-6 flex flex-col gap-2"
+          aria-label="Quote summary"
+        >
+          <h1 className="text-[28px] font-semibold tracking-tight text-text-primary leading-tight m-0">
+            {quote.event}
+          </h1>
 
-          <div className="pass-summary__meta">
+          <div className="flex items-center gap-3 text-sm text-text-secondary flex-wrap">
             {quote.date && (
               <>
                 <span>{formatDate(quote.date)}</span>
-                {quote.venue && <span className="pass-summary__meta-sep">·</span>}
+                {quote.venue && <span className="text-border-default select-none">·</span>}
               </>
             )}
             {quote.venue && <span>{quote.venue}</span>}
           </div>
 
-          <div className="pass-summary__stats">
-            <p className="pass-summary__count">
-              <strong>{lineItems.length}</strong>{' '}
+          <div className="flex items-center justify-between mt-3 pt-4 border-t border-border-subtle flex-wrap gap-3">
+            <p className="text-sm text-text-secondary">
+              <strong className="font-semibold text-text-primary">{lineItems.length}</strong>{' '}
               {lineItems.length === 1 ? 'menu item' : 'menu items'}
             </p>
 
-            <div className="pass-summary__total">
-              <span className="pass-summary__total-label">Total Cost</span>
-              <span className="pass-summary__total-value">{formatCurrency(total)}</span>
+            <div className="font-mono tabular-nums text-right">
+              <span className="block text-xs font-medium tracking-wide uppercase text-text-secondary mb-0.5 text-right font-sans not-italic">
+                Total Cost
+              </span>
+              <span className="text-xl font-semibold text-text-primary">
+                {formatCurrency(total)}
+              </span>
             </div>
           </div>
         </section>
@@ -344,10 +321,14 @@ export default function PassView({ jobId, quote: quoteProp }: PassViewProps) {
         {/* ── Line Items ── */}
         <section aria-label="Line items">
           {lineItems.length === 0 ? (
-            <p className="pass-view__empty">No line items in this quote.</p>
+            <p className="text-center py-16 text-text-tertiary text-sm">
+              No line items in this quote.
+            </p>
           ) : (
-            <div className="pass-items">
-              <p className="pass-items__heading">Line Items</p>
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-medium tracking-wide uppercase text-text-tertiary mb-1">
+                Line Items
+              </p>
               {lineItems.map((item, idx) => (
                 <LineItemCard key={item.item_name ?? idx} item={item} />
               ))}
@@ -356,10 +337,10 @@ export default function PassView({ jobId, quote: quoteProp }: PassViewProps) {
         </section>
 
         {/* ── Export ── */}
-        <div className="pass-export">
+        <div className="flex justify-end pt-2">
           <button
             type="button"
-            className="pass-export__btn"
+            className="inline-flex items-center gap-2 font-sans text-sm font-medium text-text-secondary bg-surface-raised border border-border-default rounded-card px-4 py-2.5 cursor-pointer transition-all duration-150 hover:bg-surface hover:border-border-strong hover:text-text-primary active:bg-inset select-none"
             onClick={() => exportQuote(quote)}
             aria-label="Export quote as JSON file"
           >
@@ -370,5 +351,5 @@ export default function PassView({ jobId, quote: quoteProp }: PassViewProps) {
 
       </div>
     </main>
-  );
+  )
 }

@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@theme {
+  /* Foundation */
+  --color-canvas: #FAF8F5;
+  --color-surface: #F2EFEB;
+  --color-surface-raised: #FFFFFF;
+  --color-inset: #ECEAE6;
+
+  /* Text */
+  --color-text-primary: #2C2C2C;
+  --color-text-secondary: #5C5C5C;
+  --color-text-tertiary: #8C8C8C;
+  --color-text-muted: #ACACAC;
+
+  /* Accent */
+  --color-copper: #C17F4E;
+  --color-copper-hover: #A96B3E;
+  --color-copper-subtle: #F5EDE5;
+
+  /* Status */
+  --color-success: #5B8A5E;
+  --color-success-subtle: #EFF5EF;
+  --color-warning: #C49A3C;
+  --color-warning-subtle: #FBF5E8;
+  --color-error: #B05A5A;
+  --color-error-subtle: #F9F0F0;
+  --color-neutral: #8C8C8C;
+
+  /* Borders */
+  --color-border-subtle: #E5E2DE;
+  --color-border-default: #D4D0CC;
+  --color-border-strong: #B0ADA8;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,0.08);
+
+  /* Border Radius */
+  --radius-button: 6px;
+  --radius-card: 8px;
+  --radius-input: 6px;
+  --radius-modal: 12px;
+  --radius-badge: 4px;
+
+  /* Font */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'Courier New', monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #2C2C2C;
+  background-color: #FAF8F5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  height: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+}

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import './SubmitView.css'
+import { menuSpecSchema } from '../schemas'
+import { useSubmitJob } from '../api'
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -13,7 +14,13 @@ interface ParseSummary {
 
 function UploadIcon() {
   return (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className="w-3.5 h-3.5 shrink-0"
+    >
       <path d="M8 11V3M5 6l3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M3 13h10" strokeLinecap="round" />
     </svg>
@@ -24,7 +31,6 @@ function UploadIcon() {
 
 function parseCategorySummary(json: unknown): ParseSummary[] {
   if (typeof json !== 'object' || json === null) return []
-  // categories may be nested under a "categories" key or be the root object
   const categories =
     (json as Record<string, unknown>)['categories'] ?? json
   if (typeof categories !== 'object' || categories === null) return []
@@ -41,6 +47,7 @@ function parseCategorySummary(json: unknown): ParseSummary[] {
 export default function SubmitView() {
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const submitJob = useSubmitJob()
 
   // Event details
   const [eventName, setEventName] = useState('')
@@ -54,8 +61,8 @@ export default function SubmitView() {
   const [jsonError, setJsonError] = useState('')
   const [parseSummary, setParseSummary] = useState<ParseSummary[]>([])
 
-  // Submission state
-  const [submitting, setSubmitting] = useState(false)
+  // Validation errors
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [submitError, setSubmitError] = useState('')
 
   // ── JSON validation helper ───────────────────────────────
@@ -108,14 +115,9 @@ export default function SubmitView() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitError('')
+    setFieldErrors({})
 
-    // Validate event name
-    if (!eventName.trim()) {
-      setSubmitError('Event name is required.')
-      return
-    }
-
-    // Validate menu JSON
+    // Parse categories from JSON
     let categories: Record<string, unknown> = {}
     if (menuJson.trim()) {
       const result = validateJson(menuJson)
@@ -124,85 +126,98 @@ export default function SubmitView() {
         return
       }
       const parsed = result.parsed as Record<string, unknown>
-      // Accept { categories: {...} } or bare { category: [...] }
       categories = (parsed['categories'] as Record<string, unknown>) ?? parsed
     }
 
-    setSubmitting(true)
+    // Validate with Zod
+    const payload = {
+      event: eventName.trim(),
+      date: date.trim() || null,
+      venue: venue.trim() || null,
+      guest_count_estimate: guestCount ? parseInt(guestCount, 10) : null,
+      notes: notes.trim() || null,
+      categories,
+    }
+
+    const validation = menuSpecSchema.safeParse(payload)
+    if (!validation.success) {
+      const errors: Record<string, string> = {}
+      for (const issue of validation.error.issues) {
+        const key = issue.path.join('.')
+        errors[key] = issue.message
+      }
+      setFieldErrors(errors)
+      // Also surface categories error as submitError if it's the only one
+      if (errors['categories'] && Object.keys(errors).length === 1) {
+        setSubmitError(errors['categories'])
+      }
+      return
+    }
+
     try {
-      const body = {
-        event: eventName.trim(),
-        date: date.trim() || null,
-        venue: venue.trim() || null,
-        guest_count_estimate: guestCount ? parseInt(guestCount, 10) : null,
-        notes: notes.trim() || null,
-        categories,
-      }
-
-      const res = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { detail?: string }
-        throw new Error(data.detail ?? `Server error ${res.status}`)
-      }
-
-      const data = (await res.json()) as { job_id: string }
+      const data = await submitJob.mutateAsync(validation.data)
       navigate(`/kitchen/${data.job_id}`)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong.'
       setSubmitError(message)
-    } finally {
-      setSubmitting(false)
     }
   }
+
+  const submitting = submitJob.isPending
 
   // ── Render ───────────────────────────────────────────────
 
   return (
-    <div className="submit-view">
-      <div className="submit-card">
+    <div className="min-h-screen bg-canvas flex items-start justify-center px-4 py-12">
+      <div className="w-full max-w-[640px] bg-surface-raised border border-border-subtle rounded-card shadow-sm px-8 py-8">
         {/* Header */}
-        <header className="submit-header">
-          <h1 className="submit-header__title">Yes Chef</h1>
-          <p className="submit-header__subtitle">
+        <header className="mb-8">
+          <h1 className="text-[28px] font-semibold tracking-tight text-text-primary mb-1">
+            Yes Chef
+          </h1>
+          <p className="text-sm text-text-tertiary">
             Submit a menu spec — get a priced catering quote.
           </p>
         </header>
 
         <form onSubmit={handleSubmit} noValidate>
           {/* ── Event Details ────────────────────────────── */}
-          <section className="submit-section">
-            <h2 className="submit-section__heading">Event Details</h2>
+          <section className="mb-8">
+            <h2 className="text-xs font-medium tracking-wide uppercase text-text-tertiary mb-4">
+              Event Details
+            </h2>
 
-            <div className="form-grid">
+            <div className="grid grid-cols-2 gap-4">
               {/* Event name */}
-              <div className="field field--full">
-                <label className="field__label field__label--required" htmlFor="event-name">
+              <div className="col-span-2 flex flex-col gap-2">
+                <label
+                  className="text-xs font-medium tracking-wide text-text-secondary after:content-['_*'] after:text-copper"
+                  htmlFor="event-name"
+                >
                   Event Name
                 </label>
                 <input
                   id="event-name"
-                  className="field__input"
+                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full"
                   type="text"
                   placeholder="e.g. The Hartley Wedding"
                   value={eventName}
                   onChange={(e) => setEventName(e.target.value)}
                   autoComplete="off"
                 />
+                {fieldErrors['event'] && (
+                  <span className="text-error text-xs">{fieldErrors['event']}</span>
+                )}
               </div>
 
               {/* Date */}
-              <div className="field">
-                <label className="field__label" htmlFor="date">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="date">
                   Date
                 </label>
                 <input
                   id="date"
-                  className="field__input"
+                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full"
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
@@ -210,13 +225,13 @@ export default function SubmitView() {
               </div>
 
               {/* Guest count */}
-              <div className="field">
-                <label className="field__label" htmlFor="guest-count">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="guest-count">
                   Guest Count (est.)
                 </label>
                 <input
                   id="guest-count"
-                  className="field__input"
+                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full"
                   type="number"
                   min="1"
                   placeholder="e.g. 120"
@@ -226,13 +241,13 @@ export default function SubmitView() {
               </div>
 
               {/* Venue */}
-              <div className="field field--full">
-                <label className="field__label" htmlFor="venue">
+              <div className="col-span-2 flex flex-col gap-2">
+                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="venue">
                   Venue
                 </label>
                 <input
                   id="venue"
-                  className="field__input"
+                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full"
                   type="text"
                   placeholder="e.g. Rooftop at The Palmer House"
                   value={venue}
@@ -242,13 +257,13 @@ export default function SubmitView() {
               </div>
 
               {/* Notes */}
-              <div className="field field--full">
-                <label className="field__label" htmlFor="notes">
+              <div className="col-span-2 flex flex-col gap-2">
+                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="notes">
                   Notes
                 </label>
                 <textarea
                   id="notes"
-                  className="field__textarea"
+                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full resize-y min-h-[80px] leading-relaxed"
                   placeholder="Dietary restrictions, service style, special requests…"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -258,42 +273,48 @@ export default function SubmitView() {
             </div>
           </section>
 
-          <hr className="submit-divider" />
+          <hr className="border-none border-t border-border-subtle my-8" />
 
           {/* ── Menu Spec ────────────────────────────────── */}
-          <section className="submit-section">
-            <h2 className="submit-section__heading">Menu Spec</h2>
+          <section className="mb-8">
+            <h2 className="text-xs font-medium tracking-wide uppercase text-text-tertiary mb-4">
+              Menu Spec
+            </h2>
 
-            <div className="menu-spec__actions">
+            <div className="flex items-center gap-3 mb-4">
               <button
                 type="button"
-                className="upload-btn"
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-inset border border-border-default rounded-button text-xs font-medium text-text-secondary hover:border-border-strong hover:text-text-primary transition-colors duration-150"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <UploadIcon />
                 Upload .json
               </button>
-              <span className="menu-spec__hint">or paste JSON below</span>
+              <span className="text-xs text-text-muted tracking-wide">or paste JSON below</span>
             </div>
 
             <input
               ref={fileInputRef}
               type="file"
               accept=".json"
-              style={{ display: 'none' }}
+              className="hidden"
               onChange={(e) => handleFileUpload(e.target.files)}
             />
 
             {/* Parse summary */}
             {parseSummary.length > 0 && (
-              <div className="parse-summary">
-                <p className="parse-summary__title">
+              <div className="bg-copper-subtle border border-copper/20 rounded-card px-4 py-3 mb-4">
+                <p className="text-xs font-medium tracking-wide text-copper mb-2">
                   {parseSummary.reduce((sum, s) => sum + s.count, 0)} items across{' '}
-                  {parseSummary.length} {parseSummary.length === 1 ? 'category' : 'categories'}
+                  {parseSummary.length}{' '}
+                  {parseSummary.length === 1 ? 'category' : 'categories'}
                 </p>
-                <ul className="parse-summary__list">
+                <ul className="flex flex-wrap gap-2 list-none">
                   {parseSummary.map((s) => (
-                    <li key={s.category} className="parse-summary__tag">
+                    <li
+                      key={s.category}
+                      className="text-xs font-medium tracking-wide text-copper-hover bg-surface-raised border border-copper/30 rounded-badge px-2 py-0.5"
+                    >
                       {s.category} ({s.count})
                     </li>
                   ))}
@@ -301,29 +322,41 @@ export default function SubmitView() {
               </div>
             )}
 
-            <div className="field">
-              <label className="field__label" htmlFor="menu-json">
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="menu-json">
                 Menu JSON
               </label>
               <textarea
                 id="menu-json"
-                className="field__textarea field__textarea--mono"
+                className="bg-inset border border-border-default rounded-input px-3 py-2 text-[13px] font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full resize-y min-h-[160px] leading-relaxed"
                 placeholder={`{\n  "appetizers": [\n    { "name": "Bruschetta", "servings": 2 }\n  ]\n}`}
                 value={menuJson}
                 onChange={(e) => handleMenuJsonChange(e.target.value)}
                 spellCheck={false}
               />
-              {jsonError && <span className="field__error">{jsonError}</span>}
+              {jsonError && (
+                <span className="text-error text-xs">{jsonError}</span>
+              )}
             </div>
           </section>
 
           {/* ── Error ────────────────────────────────────── */}
-          {submitError && <div className="submit-error">{submitError}</div>}
+          {submitError && (
+            <div className="bg-error-subtle border border-error/25 rounded-card px-4 py-3 mt-4 text-sm text-error leading-relaxed">
+              {submitError}
+            </div>
+          )}
 
           {/* ── Footer / CTA ─────────────────────────────── */}
-          <div className="submit-footer">
-            <button type="submit" className="btn-cta" disabled={submitting}>
-              {submitting && <span className="btn-cta__spinner" />}
+          <div className="flex justify-end pt-4 border-t border-border-subtle mt-8">
+            <button
+              type="submit"
+              className="inline-flex items-center gap-3 px-6 py-3 bg-copper hover:bg-copper-hover text-white border-none rounded-button text-base font-semibold transition-colors duration-150 disabled:opacity-55 disabled:cursor-not-allowed"
+              disabled={submitting}
+            >
+              {submitting && (
+                <span className="w-4 h-4 border-2 border-white/35 border-t-white rounded-full animate-spin" />
+              )}
               {submitting ? 'Sending to kitchen…' : 'Start Quote'}
             </button>
           </div>

@@ -1,44 +1,32 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import './KitchenView.css'
+import { useJobStatus } from '../api'
+import type { JobStatus } from '../schemas'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-/**
- * @typedef {'pending'|'decomposing'|'decomposed'|'resolving'|'completed'|'failed'} ItemStatus
- */
+type ItemStatus = 'pending' | 'decomposing' | 'decomposed' | 'resolving' | 'completed' | 'failed'
 
-/**
- * @typedef {{ item_name: string, step: string, status: ItemStatus }} JobItem
- */
-
-/**
- * @typedef {{
- *   job_id: string,
- *   status: string,
- *   total_items: number,
- *   completed_items: number,
- *   failed_items: number,
- *   items: JobItem[]
- * }} JobState
- */
+interface JobItem {
+  item_name: string
+  step: string
+  status: ItemStatus
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Map an item's status/step to a card state class */
-function cardClass(item) {
-  if (item.status === 'completed') return 'ticket--completed'
-  if (item.status === 'failed')    return 'ticket--failed'
+function cardStateClasses(item: JobItem): string {
+  if (item.status === 'completed') return 'border-l-success'
+  if (item.status === 'failed') return 'border-l-error'
   if (
     item.status === 'decomposing' ||
-    item.status === 'decomposed'  ||
+    item.status === 'decomposed' ||
     item.status === 'resolving'
-  ) return 'ticket--processing'
-  return 'ticket--pending'
+  ) return 'border-l-copper'
+  return 'border-l-border-default'
 }
 
-/** Map an item's status to a human-readable station label */
-function stationLabel(item) {
+function stationLabel(item: JobItem): string {
   switch (item.status) {
     case 'decomposing': return 'Prep — decomposing'
     case 'decomposed':  return 'Prep — decomposed'
@@ -49,8 +37,18 @@ function stationLabel(item) {
   }
 }
 
-/** Infer a category from item_name when not provided (the API gives item_name only) */
-function inferCategory(name) {
+function stationLabelColor(item: JobItem): string {
+  if (item.status === 'completed') return 'text-success font-medium'
+  if (item.status === 'failed') return 'text-error font-medium'
+  if (
+    item.status === 'decomposing' ||
+    item.status === 'decomposed' ||
+    item.status === 'resolving'
+  ) return 'text-copper font-medium'
+  return 'text-text-tertiary'
+}
+
+function inferCategory(name: string): string {
   const n = name.toLowerCase()
   if (/soup|salad|bite|spring|bruschetta|cocktail shrimp|mushroom/.test(n)) return 'Appetizer'
   if (/cake|tart|mousse|crème|panna|sorbet|chocolate|dessert/.test(n)) return 'Dessert'
@@ -58,13 +56,12 @@ function inferCategory(name) {
   return 'Main'
 }
 
-/** Group items by logical station bucket */
-function groupByStation(items) {
-  const prep = []
-  const match = []
-  const done = []
-  const eightySixed = []
-  const pending = []
+function groupByStation(items: JobItem[]) {
+  const prep: JobItem[] = []
+  const match: JobItem[] = []
+  const done: JobItem[] = []
+  const eightySixed: JobItem[] = []
+  const pending: JobItem[] = []
 
   for (const item of items) {
     switch (item.status) {
@@ -89,40 +86,70 @@ function groupByStation(items) {
   return { pending, prep, match, done, eightySixed }
 }
 
+function recalcCounters(items: JobItem[]) {
+  const completed_items = items.filter((i) => i.status === 'completed').length
+  const failed_items = items.filter((i) => i.status === 'failed').length
+  return { completed_items, failed_items }
+}
+
 // ── Ticket Card ──────────────────────────────────────────────────────────────
 
-function TicketCard({ item }) {
-  const cls = cardClass(item)
+function TicketCard({ item }: { item: JobItem }) {
+  const borderColor = cardStateClasses(item)
+  const labelColor = stationLabelColor(item)
   const station = stationLabel(item)
   const category = inferCategory(item.item_name)
+  const isProcessing =
+    item.status === 'decomposing' ||
+    item.status === 'decomposed' ||
+    item.status === 'resolving'
 
   return (
-    <article className={`ticket ${cls}`}>
-      <div className="ticket__header">
-        <span className="ticket__name">{item.item_name}</span>
-        <span className="ticket__tag">{category}</span>
+    <article
+      className={`bg-surface-raised border border-border-subtle border-l-[3px] ${borderColor} rounded-card shadow-sm p-4 w-[220px] min-w-[200px] transition-all duration-200 ${isProcessing ? 'animate-pulse-copper' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <span className={`text-base font-medium leading-tight flex-1 ${item.status === 'pending' ? 'text-text-muted' : 'text-text-primary'}`}>
+          {item.item_name}
+        </span>
+        <span className="text-xs font-medium tracking-wide text-text-secondary bg-surface border border-border-subtle rounded-badge px-2 py-0.5 whitespace-nowrap shrink-0">
+          {category}
+        </span>
       </div>
-      <div className="ticket__station">{station}</div>
+      <div className={`text-xs tracking-wide mt-1 ${labelColor}`}>
+        {station}
+      </div>
     </article>
   )
 }
 
 // ── Station Section ───────────────────────────────────────────────────────────
 
-function Station({ label, icon, items, hidden }) {
+interface StationProps {
+  label: string
+  icon: string
+  items: JobItem[]
+  hidden: boolean
+}
+
+function Station({ label, icon, items, hidden }: StationProps) {
   if (hidden) return null
 
   return (
-    <section className={`station${items.length === 0 ? ' station--empty' : ''}`}>
-      <div className="station__header">
-        <span className="station__icon">{icon}</span>
-        <span className="station__label">{label}</span>
+    <section className="flex flex-col gap-4">
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-text-tertiary">{icon}</span>
+        <span className="text-xs font-medium tracking-wide uppercase text-text-tertiary">
+          {label}
+        </span>
         {items.length > 0 && (
-          <span className="station__count">({items.length})</span>
+          <span className="text-[11px] tracking-wide text-text-muted ml-1">
+            ({items.length})
+          </span>
         )}
       </div>
       {items.length > 0 && (
-        <div className="station__rail">
+        <div className="flex flex-wrap gap-4">
           {items.map((item) => (
             <TicketCard key={item.item_name} item={item} />
           ))}
@@ -134,75 +161,63 @@ function Station({ label, icon, items, hidden }) {
 
 // ── Counter ───────────────────────────────────────────────────────────────────
 
-function Counter({ value, label, modifier }) {
+interface CounterProps {
+  value: number
+  label: string
+  valueColor?: string
+}
+
+function Counter({ value, label, valueColor = 'text-text-primary' }: CounterProps) {
   return (
-    <div className={`counter counter--${modifier}`}>
-      <span className="counter__value">{value}</span>
-      <span className="counter__label">{label}</span>
+    <div className="flex flex-col gap-1">
+      <span className={`text-[28px] font-semibold tracking-tight tabular-nums leading-none ${valueColor}`}>
+        {value}
+      </span>
+      <span className="text-xs font-medium tracking-wide uppercase text-text-tertiary">
+        {label}
+      </span>
     </div>
   )
 }
 
 // ── Main View ─────────────────────────────────────────────────────────────────
 
-const POLL_INTERVAL = 3000
-
 export default function KitchenView() {
-  const { jobId } = useParams()
+  const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
 
-  /** @type {[JobState | null, Function]} */
-  const [job, setJob] = useState(null)
-  const [connStatus, setConnStatus] = useState('connecting') // connecting | live | error | closed
+  const [job, setJob] = useState<JobStatus | null>(null)
+  const [connStatus, setConnStatus] = useState<'connecting' | 'live' | 'error' | 'closed'>('connecting')
   const [jobDone, setJobDone] = useState(false)
 
-  const pollRef = useRef(null)
-  const sseRef  = useRef(null)
+  const sseRef = useRef<EventSource | null>(null)
+
+  // TanStack Query polling — used as initial fetch + fallback
+  const { data: queryData } = useJobStatus(jobId ?? '', !!jobId && jobId !== 'demo')
+
+  // Merge query data into local state (SSE takes priority for real-time updates)
+  useEffect(() => {
+    if (!queryData) return
+    setJob(queryData)
+    if (queryData.status === 'completed' || queryData.status === 'completed_with_errors') {
+      setJobDone(true)
+    }
+  }, [queryData])
 
   // ── Merge SSE item update into job state ───────────────────────────────────
-  const applyItemUpdate = useCallback((itemName, patch) => {
+  const applyItemUpdate = useCallback((itemName: string, patch: Partial<JobItem>) => {
     setJob((prev) => {
       if (!prev) return prev
       const items = prev.items.map((it) =>
         it.item_name === itemName ? { ...it, ...patch } : it,
-      )
+      ) as JobItem[]
       return { ...prev, ...recalcCounters(items), items }
     })
   }, [])
 
-  // ── Polling ────────────────────────────────────────────────────────────────
-  const fetchJob = useCallback(async () => {
-    try {
-      const res = await fetch(`/jobs/${jobId}`)
-      if (!res.ok) return
-      /** @type {JobState} */
-      const data = await res.json()
-      setJob(data)
-      if (data.status === 'completed' || data.status === 'failed') {
-        setJobDone(true)
-        stopPolling()
-      }
-    } catch {
-      // network error — will retry on next tick
-    }
-  }, [jobId])
-
-  function startPolling() {
-    if (pollRef.current) return
-    pollRef.current = setInterval(fetchJob, POLL_INTERVAL)
-  }
-
-  function stopPolling() {
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
-  }
-
   // ── SSE ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!jobId || jobId === 'demo') {
-      // Demo mode — show placeholder state
       setJob({
         job_id: 'demo',
         status: 'running',
@@ -214,14 +229,7 @@ export default function KitchenView() {
       return
     }
 
-    // Initial fetch
-    fetchJob()
-
-    // Start polling as fallback
-    startPolling()
-
-    // Connect SSE
-    const es = new EventSource(`/jobs/${jobId}/stream`)
+    const es = new EventSource(`/api/jobs/${jobId}/stream`)
     sseRef.current = es
 
     es.addEventListener('open', () => {
@@ -230,10 +238,9 @@ export default function KitchenView() {
 
     es.addEventListener('error', () => {
       setConnStatus('error')
-      // Polling continues as fallback
     })
 
-    es.addEventListener('item_step_change', (e) => {
+    es.addEventListener('item_step_change', (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data)
         applyItemUpdate(payload.item_name, {
@@ -245,21 +252,16 @@ export default function KitchenView() {
       }
     })
 
-    es.addEventListener('item_completed', (e) => {
+    es.addEventListener('item_completed', (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data)
         applyItemUpdate(payload.item_name, { status: 'completed', step: 'completed' })
-        setJob((prev) => {
-          if (!prev) return prev
-          const completed = prev.items.filter((i) => i.status === 'completed').length
-          return { ...prev, completed_items: completed }
-        })
       } catch {
         // ignore
       }
     })
 
-    es.addEventListener('item_failed', (e) => {
+    es.addEventListener('item_failed', (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data)
         applyItemUpdate(payload.item_name, { status: 'failed', step: 'failed' })
@@ -271,20 +273,16 @@ export default function KitchenView() {
     es.addEventListener('job_completed', () => {
       setJobDone(true)
       setConnStatus('closed')
-      stopPolling()
       es.close()
-      // Final authoritative fetch
-      fetchJob()
     })
 
     return () => {
       es.close()
-      stopPolling()
     }
-  }, [jobId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [jobId, applyItemUpdate])
 
   // ── Derived state ──────────────────────────────────────────────────────────
-  const items = job?.items ?? []
+  const items = (job?.items ?? []) as JobItem[]
   const { pending, prep, match, done, eightySixed } = groupByStation(items)
 
   const totalItems     = job?.total_items ?? 0
@@ -292,25 +290,32 @@ export default function KitchenView() {
   const failedItems    = job?.failed_items ?? eightySixed.length
   const inProgress     = prep.length + match.length
 
+  // ── Conn dot color ─────────────────────────────────────────────────────────
+  const connDotColor = connStatus === 'live' ? 'bg-success'
+    : connStatus === 'error' ? 'bg-error'
+    : 'bg-text-muted'
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="kitchen">
+    <div className="min-h-screen bg-canvas flex flex-col">
       {/* ── Header ── */}
-      <header className="kitchen__header">
-        <h1 className="kitchen__title">Kitchen</h1>
+      <header className="bg-surface-raised border-b border-border-subtle px-8 py-6 shadow-sm">
+        <h1 className="text-[28px] font-semibold tracking-tight text-text-primary mb-6">
+          Kitchen
+        </h1>
 
-        <div className="kitchen__counters">
-          <Counter value={totalItems}     label="Total items"  modifier="total"  />
-          <Counter value={inProgress}     label="In progress"  modifier="active"  />
-          <Counter value={completedItems} label="Completed"    modifier="done"   />
-          <Counter value={failedItems}    label="Failed"       modifier="failed" />
+        <div className="flex gap-8 flex-wrap">
+          <Counter value={totalItems}     label="Total items"  valueColor="text-text-primary"  />
+          <Counter value={inProgress}     label="In progress"  valueColor="text-copper"         />
+          <Counter value={completedItems} label="Completed"    valueColor="text-success"        />
+          <Counter value={failedItems}    label="Failed"       valueColor="text-error"          />
         </div>
 
         {jobDone && (
-          <div className="kitchen__done-banner">
+          <div className="mt-4 px-4 py-3 bg-success-subtle border border-success rounded-button flex items-center gap-4 text-sm font-medium text-success">
             <span>✓ All items processed — quote is ready.</span>
             <button
-              className="btn-view-quote"
+              className="px-3 py-1.5 bg-success text-white border-none rounded-button text-sm font-medium cursor-pointer hover:opacity-90 transition-opacity"
               onClick={() => navigate(`/pass/${jobId}`)}
             >
               View Quote
@@ -320,9 +325,9 @@ export default function KitchenView() {
       </header>
 
       {/* ── Ticket rail ── */}
-      <main className="kitchen__body">
+      <main className="flex-1 p-8 flex flex-col gap-8">
         {items.length === 0 ? (
-          <div className="kitchen__empty">
+          <div className="flex items-center justify-center py-16 text-text-muted text-sm">
             {jobId === 'demo'
               ? 'Submit a menu to start tracking progress.'
               : 'Loading items…'}
@@ -345,8 +350,8 @@ export default function KitchenView() {
 
       {/* ── Connection status indicator ── */}
       {jobId !== 'demo' && (
-        <div className={`kitchen__conn kitchen__conn--${connStatus}`}>
-          <span className="conn-dot" />
+        <div className="fixed bottom-4 right-4 text-[11px] tracking-wide px-2 py-1 rounded-badge border border-border-subtle bg-surface-raised text-text-muted flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${connDotColor}`} />
           {connStatus === 'live'       && 'Live'}
           {connStatus === 'connecting' && 'Connecting…'}
           {connStatus === 'error'      && 'Polling'}
@@ -355,13 +360,4 @@ export default function KitchenView() {
       )}
     </div>
   )
-}
-
-// ── Utils ─────────────────────────────────────────────────────────────────────
-
-/** Recount completed/failed from items array */
-function recalcCounters(items) {
-  const completed_items = items.filter((i) => i.status === 'completed').length
-  const failed_items    = items.filter((i) => i.status === 'failed').length
-  return { completed_items, failed_items }
 }
