@@ -1,5 +1,6 @@
 """Tests for the orchestrator: sequential pipeline and checkpointing."""
 
+import asyncio
 import os
 import uuid
 from unittest.mock import AsyncMock, MagicMock
@@ -529,3 +530,166 @@ async def test_resume_pending_items_restart(orch_session_factory):
         items = result.scalars().all()
         for item in items:
             assert item.status == "completed"
+
+
+# ---------------------------------------------------------------------------
+# MENU_SPEC_6_ITEMS — used by concurrency tests
+# ---------------------------------------------------------------------------
+
+MENU_SPEC_6_ITEMS = {
+    "event": "Concurrency Test Event",
+    "date": "2025-10-01",
+    "venue": "Test Venue",
+    "guest_count_estimate": 50,
+    "notes": "Concurrency test",
+    "categories": {
+        "appetizers": [
+            {"name": "Item One", "description": "First item"},
+            {"name": "Item Two", "description": "Second item"},
+            {"name": "Item Three", "description": "Third item"},
+        ],
+        "main_plates": [
+            {"name": "Item Four", "description": "Fourth item"},
+            {"name": "Item Five", "description": "Fifth item"},
+            {"name": "Item Six", "description": "Sixth item"},
+        ],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# test_concurrent_processing
+# ---------------------------------------------------------------------------
+
+
+async def test_concurrent_processing(orch_session_factory):
+    """6 items with semaphore=3: no more than 3 run simultaneously, all complete."""
+    from yes_chef.orchestrator.engine import Orchestrator
+
+    active_count = 0
+    max_active = 0
+
+    async def tracked_decompose(item_name, item_description, work_item_id, session):
+        nonlocal active_count, max_active
+        active_count += 1
+        if active_count > max_active:
+            max_active = active_count
+        await asyncio.sleep(0.05)
+        active_count -= 1
+        return DecompositionResult(
+            ingredients=[Ingredient(name="test ingredient", quantity="1 oz")]
+        )
+
+    async def tracked_resolve(ingredients, catalog_service, work_item_id, session):
+        nonlocal active_count, max_active
+        active_count += 1
+        if active_count > max_active:
+            max_active = active_count
+        await asyncio.sleep(0.05)
+        active_count -= 1
+        match = IngredientMatch(
+            name="test ingredient",
+            catalog_item="TEST ITEM",
+            sysco_item_number="99999",
+            provider="sysco",
+            source="sysco_catalog",
+            unit_cost=5.0,
+            reasoning="test match",
+        )
+        return ResolveResult(matches=[match], ingredient_cost_per_unit=5.0)
+
+    orch = Orchestrator(
+        session_factory=orch_session_factory,
+        catalog_service=make_mock_catalog_service(),
+        decompose_fn=tracked_decompose,
+        resolve_fn=tracked_resolve,
+        max_concurrent=3,
+    )
+
+    job_id = await orch.submit_job(MENU_SPEC_6_ITEMS)
+    await orch.process_job(job_id)
+
+    # Semaphore must have capped concurrency at 3
+    assert max_active <= 3, f"Concurrency exceeded semaphore: {max_active} > 3"
+
+    # All 6 items must have completed
+    async with orch_session_factory() as sess:
+        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        items = result.scalars().all()
+        assert len(items) == 6
+        for item in items:
+            assert item.status == "completed", (
+                f"Item {item.item_name} has status {item.status!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# test_concurrent_isolation
+# ---------------------------------------------------------------------------
+
+
+async def test_concurrent_isolation(orch_session_factory):
+    """6 concurrent items: one fails, other 5 complete without cross-contamination."""
+    from yes_chef.orchestrator.engine import Orchestrator
+
+    fail_target = "Item Three"
+
+    async def selective_decompose(item_name, item_description, work_item_id, session):
+        await asyncio.sleep(0.01)
+        if item_name == fail_target:
+            raise RuntimeError(f"Intentional failure for {item_name}")
+        return DecompositionResult(
+            ingredients=[
+                Ingredient(name=f"ingredient for {item_name}", quantity="1 oz")
+            ]
+        )
+
+    async def selective_resolve(ingredients, catalog_service, work_item_id, session):
+        await asyncio.sleep(0.01)
+        ing = ingredients[0]
+        match = IngredientMatch(
+            name=ing.name,
+            catalog_item="ITEM",
+            sysco_item_number="00001",
+            provider="sysco",
+            source="sysco_catalog",
+            unit_cost=3.0,
+            reasoning="test",
+        )
+        return ResolveResult(matches=[match], ingredient_cost_per_unit=3.0)
+
+    orch = Orchestrator(
+        session_factory=orch_session_factory,
+        catalog_service=make_mock_catalog_service(),
+        decompose_fn=selective_decompose,
+        resolve_fn=selective_resolve,
+        max_concurrent=3,
+    )
+
+    job_id = await orch.submit_job(MENU_SPEC_6_ITEMS)
+    await orch.process_job(job_id)
+
+    async with orch_session_factory() as sess:
+        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        items = result.scalars().all()
+        assert len(items) == 6
+
+        failed = [i for i in items if i.status == "failed"]
+        completed = [i for i in items if i.status == "completed"]
+
+        assert len(failed) == 1, f"Expected 1 failed, got {len(failed)}"
+        assert len(completed) == 5, f"Expected 5 completed, got {len(completed)}"
+
+        # Failed item is the right one
+        assert failed[0].item_name == fail_target
+        assert failed[0].error is not None
+        assert "Intentional failure" in failed[0].error
+
+        # No cross-contamination: each completed item has its own ingredient
+        for item in completed:
+            assert item.step_data is not None
+            matches = item.step_data.get("matches", [])
+            assert len(matches) == 1
+            assert f"ingredient for {item.item_name}" == matches[0]["name"], (
+                f"Wrong ingredient in {item.item_name}: {matches[0]['name']}"
+            )

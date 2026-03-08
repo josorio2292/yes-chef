@@ -1,5 +1,6 @@
-"""Orchestrator engine: sequential pipeline with checkpointing and resumability."""
+"""Orchestrator engine: pipeline with checkpointing, resumability, and concurrency."""
 
+import asyncio
 import logging
 import uuid
 from collections.abc import Callable, Coroutine
@@ -46,11 +47,13 @@ class Orchestrator:
         catalog_service: CatalogService,
         decompose_fn: DecomposeFn | None = None,
         resolve_fn: ResolveFn | None = None,
+        max_concurrent: int = 3,
     ) -> None:
         self._session_factory = session_factory
         self._catalog_service = catalog_service
         self._decompose_fn: DecomposeFn = decompose_fn or decompose_item
         self._resolve_fn: ResolveFn = resolve_fn or resolve_item
+        self._max_concurrent = max_concurrent
 
     # ------------------------------------------------------------------
     # Public API
@@ -110,21 +113,37 @@ class Orchestrator:
             )
             work_items = result.scalars().all()
 
-        # Process each item sequentially
+        # Separate already-completed items (skip reprocessing) from pending ones
         completed_items: list[dict] = []
         failed_count = 0
 
         for work_item in work_items:
             if work_item.status == "completed":
-                # Reconstruct line item from persisted step_data
                 line_item = self._line_item_from_step_data(work_item)
                 if line_item is not None:
                     completed_items.append(line_item)
-                continue
 
-            line_item = await self._process_item(work_item)
-            if line_item is not None:
-                completed_items.append(line_item)
+        pending_items = [wi for wi in work_items if wi.status != "completed"]
+
+        # Process pending items concurrently, bounded by the semaphore
+        semaphore = asyncio.Semaphore(self._max_concurrent)
+
+        async def process_with_semaphore(work_item: WorkItem) -> dict | None:
+            async with semaphore:
+                return await self._process_item(work_item)
+
+        tasks = [process_with_semaphore(wi) for wi in pending_items]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for result in results:
+            if isinstance(result, BaseException):
+                # _process_item never propagates; this would be an unexpected error
+                logger.error(
+                    "Unexpected exception from process_with_semaphore: %s", result
+                )
+                failed_count += 1
+            elif result is not None:
+                completed_items.append(result)
             else:
                 failed_count += 1
 
