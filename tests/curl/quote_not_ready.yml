@@ -1,0 +1,7 @@
+name: Get quote before completion
+depends_on: Submit a valid job
+request:
+  method: GET
+  url: /jobs/${prev.job_id}/quote
+expect:
+  status: 409

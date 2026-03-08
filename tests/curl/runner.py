@@ -207,11 +207,11 @@ def run_test(
     test: dict[str, Any],
     base_url: str,
     prev_response: Any,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, Any]:
     """
     Execute a single test case.
 
-    Returns (passed, detail_message).
+    Returns (passed, detail_message, response_body).
     """
     request = test.get("request", {})
     expect = test.get("expect", {})
@@ -234,7 +234,7 @@ def run_test(
             method, url, headers, body
         )
     except Exception as exc:
-        return False, f"  curl error: {exc}"
+        return False, f"  curl error: {exc}", None
 
     failures: list[str] = []
 
@@ -265,9 +265,9 @@ def run_test(
 
     if failures:
         detail = "\n".join(failures)
-        return False, detail
+        return False, detail, response_body
 
-    return True, ""
+    return True, "", response_body
 
 
 def run_file(
@@ -291,13 +291,14 @@ def run_file(
         depends_on = test.get("depends_on")
         prev_response = named_responses.get(depends_on) if depends_on else None
 
-        passed, detail = run_test(test, base_url, prev_response)
+        passed, detail, response_body = run_test(test, base_url, prev_response)
 
         if passed:
-            # Store placeholder so later tests can reference by name
-            named_responses[name] = None
+            # Store the actual response body so later tests can reference by name
+            named_responses[name] = response_body
             print(f"  {green('PASS')}  {name}")
         else:
+            named_responses[name] = response_body
             print(f"  {red('FAIL')}  {name}")
             if detail:
                 print(detail)

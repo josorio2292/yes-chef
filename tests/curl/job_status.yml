@@ -1,0 +1,10 @@
+name: Get job status
+depends_on: Submit a valid job
+request:
+  method: GET
+  url: /jobs/${prev.job_id}
+expect:
+  status: 200
+  body:
+    job_id: any_uuid
+    status: any_string

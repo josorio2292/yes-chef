@@ -1,0 +1,9 @@
+name: Submit with empty body
+request:
+  method: POST
+  url: /jobs
+  headers:
+    Content-Type: application/json
+  body: {}
+expect:
+  status: 422
