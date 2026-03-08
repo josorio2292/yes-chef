@@ -44,7 +44,7 @@ export const ingredientSchema = z.object({
   quantity: z.string(),
   unit_cost: z.number().nullable(),
   source: z.enum(['sysco_catalog', 'estimated', 'not_available']),
-  sysco_item_number: z.string().nullable(),
+  source_item_id: z.string().nullable(),
 })
 
 export const lineItemSchema = z.object({

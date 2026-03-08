@@ -43,7 +43,7 @@ COMPLETED_JOB_QUOTE = {
                     "quantity": "2 each",
                     "unit_cost": 0.50,
                     "source": "sysco_catalog",
-                    "sysco_item_number": "12345",
+                    "source_item_id": "12345",
                 }
             ],
             "ingredient_cost_per_unit": 0.50,
@@ -250,7 +250,7 @@ def test_get_quote_after_completion(client):
                 "quantity": "2 each",
                 "unit_cost": 0.50,
                 "source": "sysco_catalog",
-                "sysco_item_number": "12345",
+                "source_item_id": "12345",
             }
         ],
         "ingredient_cost_per_unit": 0.50,

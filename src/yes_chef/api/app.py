@@ -109,7 +109,7 @@ def _build_quote_from_job(job: Any, work_items: list[Any] | None = None) -> dict
                         "quantity": m.get("quantity", ""),
                         "unit_cost": m.get("unit_cost"),
                         "source": m.get("source", "not_available"),
-                        "sysco_item_number": m.get("sysco_item_number"),
+                        "source_item_id": m.get("source_item_id"),
                     }
                     for m in matches
                 ],
@@ -181,11 +181,11 @@ def create_app(
             )
             if not await catalog.has_embeddings():
                 logger.info(
-                    "No embeddings found in DB — running embed_catalog() for first run…"
+                    "No embeddings found in DB — running ingest() for first run…"
                 )
-                await catalog.embed_catalog()
+                await catalog.ingest("sysco")
             else:
-                logger.info("Embeddings already in DB — skipping embed_catalog().")
+                logger.info("Embeddings already in DB — skipping ingest().")
             application.state.orchestrator = Orchestrator(
                 session_factory=application.state.session_factory,
                 catalog_service=catalog,

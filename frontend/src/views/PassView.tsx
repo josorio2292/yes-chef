@@ -80,7 +80,7 @@ function IngredientTable({ ingredients }: { ingredients: Ingredient[] }) {
               <SourceBadge source={ing.source} />
             </td>
             <td className="px-4 py-2.5 font-mono tabular-nums text-xs text-text-secondary text-right whitespace-nowrap min-w-[100px]">
-              {ing.sysco_item_number ?? (
+              {ing.source_item_id ?? (
                 <span className="text-text-muted">—</span>
               )}
             </td>

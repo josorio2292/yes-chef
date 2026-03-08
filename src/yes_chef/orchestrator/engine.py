@@ -325,7 +325,7 @@ class Orchestrator:
                         "quantity": _find_quantity(ingredients, m.name),
                         "unit_cost": m.unit_cost,
                         "source": m.source,
-                        "sysco_item_number": m.sysco_item_number,
+                        "source_item_id": m.source_item_id,
                     }
                     for m in resolve_result.matches
                 ],
@@ -393,7 +393,7 @@ class Orchestrator:
                     "quantity": m.get("quantity", ""),
                     "unit_cost": m.get("unit_cost"),
                     "source": m.get("source", ""),
-                    "sysco_item_number": m.get("sysco_item_number"),
+                    "source_item_id": m.get("source_item_id"),
                 }
                 for m in matches
             ],

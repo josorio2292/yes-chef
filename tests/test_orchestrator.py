@@ -75,7 +75,7 @@ def make_mock_resolve_fn(unit_cost=5.0):
     match = IngredientMatch(
         name="test ingredient",
         catalog_item="TEST ITEM",
-        sysco_item_number="99999",
+        source_item_id="99999",
         provider="sysco",
         source="sysco_catalog",
         unit_cost=unit_cost,
@@ -246,7 +246,7 @@ async def test_process_job_produces_quote(orch_session_factory):
             assert "quantity" in ing
             assert "unit_cost" in ing
             assert "source" in ing
-            assert "sysco_item_number" in ing
+            assert "source_item_id" in ing
 
     item_names = {li["item_name"] for li in line_items}
     assert "Bacon-Wrapped Scallops" in item_names
@@ -376,7 +376,7 @@ async def test_resume_completed_items_skipped(orch_session_factory):
                 {
                     "name": "pre-resolved ingredient",
                     "catalog_item": "ITEM",
-                    "sysco_item_number": "11111",
+                    "source_item_id": "11111",
                     "provider": "sysco",
                     "source": "sysco_catalog",
                     "unit_cost": 3.0,
@@ -590,7 +590,7 @@ async def test_concurrent_processing(orch_session_factory):
         match = IngredientMatch(
             name="test ingredient",
             catalog_item="TEST ITEM",
-            sysco_item_number="99999",
+            source_item_id="99999",
             provider="sysco",
             source="sysco_catalog",
             unit_cost=5.0,
@@ -650,7 +650,7 @@ async def test_concurrent_isolation(orch_session_factory):
         match = IngredientMatch(
             name=ing.name,
             catalog_item="ITEM",
-            sysco_item_number="00001",
+            source_item_id="00001",
             provider="sysco",
             source="sysco_catalog",
             unit_cost=3.0,
