@@ -86,7 +86,7 @@ async def test_cache_hit_fast_path(resolution_session_factory):
         sess.add(
             IngredientCache(
                 ingredient_name="butter",
-                sysco_item_number="12345",
+                source_item_id="12345",
                 source="sysco_catalog",
                 provider="sysco",
             )
@@ -104,10 +104,10 @@ async def test_cache_hit_fast_path(resolution_session_factory):
 
     assert result is not None
     assert isinstance(result, IngredientMatch)
-    assert result.sysco_item_number == "12345"
+    assert result.source_item_id == "12345"
     assert result.source == "sysco_catalog"
     assert result.provider == "sysco"
-    # get_price was called with the cached item number
+    # get_price was called with the cached source_item_id
     catalog_svc.get_price.assert_called_once_with("12345", "sysco")
     # No LLM was invoked (catalog_svc.search never called)
     catalog_svc.search.assert_not_called()
@@ -127,7 +127,7 @@ async def test_cache_hit_invalidation(resolution_session_factory):
         sess.add(
             IngredientCache(
                 ingredient_name="milk",
-                sysco_item_number="99999",
+                source_item_id="99999",
                 source="sysco_catalog",
                 provider="sysco",
             )
@@ -163,11 +163,14 @@ async def test_matching_agent_finds_match(resolution_session_factory):
 
     candidates = [
         CatalogCandidate(
-            item_number="54321",
+            source_item_id="54321",
             description="BEEF TENDERLOIN WHOLE",
             unit_of_measure="CASE/12 LB",
             provider="sysco",
             similarity_score=0.92,
+            cost_per_case=180.0,
+            category=None,
+            brand=None,
         )
     ]
     price = PriceResult(cost_per_case=180.0, unit_of_measure="CASE/12 LB")
@@ -193,7 +196,7 @@ async def test_matching_agent_finds_match(resolution_session_factory):
     mock_output = {
         "name": "beef tenderloin",
         "catalog_item": "BEEF TENDERLOIN WHOLE",
-        "sysco_item_number": "54321",
+        "source_item_id": "54321",
         "provider": "sysco",
         "source": "sysco_catalog",
         "unit_cost": 15.0,
@@ -214,7 +217,7 @@ async def test_matching_agent_finds_match(resolution_session_factory):
     match = result.matches[0]
     assert isinstance(match, IngredientMatch)
     assert match.source == "sysco_catalog"
-    assert match.sysco_item_number == "54321"
+    assert match.source_item_id == "54321"
 
     # Cache should be populated
     async with resolution_session_factory() as sess:
@@ -223,7 +226,7 @@ async def test_matching_agent_finds_match(resolution_session_factory):
         )
         cache_row = (await sess.execute(stmt)).scalar_one_or_none()
     assert cache_row is not None, "Cache entry must be created after agent resolution"
-    assert cache_row.sysco_item_number == "54321"
+    assert cache_row.source_item_id == "54321"
     assert cache_row.source == "sysco_catalog"
 
 
@@ -255,7 +258,7 @@ async def test_matching_agent_not_available(resolution_session_factory):
     mock_output = {
         "name": "truffle oil",
         "catalog_item": None,
-        "sysco_item_number": None,
+        "source_item_id": None,
         "provider": None,
         "source": "not_available",
         "unit_cost": None,
@@ -286,7 +289,7 @@ async def test_matching_agent_not_available(resolution_session_factory):
         cache_row = (await sess.execute(stmt)).scalar_one_or_none()
     assert cache_row is not None, "Cache entry must be created for not_available"
     assert cache_row.source == "not_available"
-    assert cache_row.sysco_item_number is None
+    assert cache_row.source_item_id is None
 
 
 # ---------------------------------------------------------------------------
@@ -300,11 +303,14 @@ async def test_cache_populated_after_agent(resolution_session_factory):
 
     candidates = [
         CatalogCandidate(
-            item_number="77777",
+            source_item_id="77777",
             description="CHICKEN BREAST BONELESS",
             unit_of_measure="40 LB CASE",
             provider="sysco",
             similarity_score=0.88,
+            cost_per_case=80.0,
+            category=None,
+            brand=None,
         )
     ]
     price = PriceResult(cost_per_case=80.0, unit_of_measure="40 LB CASE")
@@ -329,7 +335,7 @@ async def test_cache_populated_after_agent(resolution_session_factory):
     mock_output = {
         "name": "chicken breast",
         "catalog_item": "CHICKEN BREAST BONELESS",
-        "sysco_item_number": "77777",
+        "source_item_id": "77777",
         "provider": "sysco",
         "source": "sysco_catalog",
         "unit_cost": 2.0,
@@ -352,7 +358,7 @@ async def test_cache_populated_after_agent(resolution_session_factory):
         )
         cache_row = (await sess.execute(stmt)).scalar_one_or_none()
     assert cache_row is not None
-    assert cache_row.sysco_item_number == "77777"
+    assert cache_row.source_item_id == "77777"
     assert cache_row.source == "sysco_catalog"
     assert cache_row.provider == "sysco"
 
@@ -371,7 +377,7 @@ async def test_subsequent_call_hits_fast_path(resolution_session_factory):
         sess.add(
             IngredientCache(
                 ingredient_name="salmon fillet",
-                sysco_item_number="88888",
+                source_item_id="88888",
                 source="sysco_catalog",
                 provider="sysco",
             )
@@ -416,7 +422,7 @@ async def test_subsequent_call_hits_fast_path(resolution_session_factory):
 
     assert len(result.matches) == 1
     assert agent_called is False, "Fast path must not invoke the LLM agent"
-    assert result.matches[0].sysco_item_number == "88888"
+    assert result.matches[0].source_item_id == "88888"
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +438,7 @@ async def test_cost_rollup():
         IngredientMatch(
             name="butter",
             catalog_item="BUTTER UNSALTED",
-            sysco_item_number="111",
+            source_item_id="111",
             provider="sysco",
             source="sysco_catalog",
             unit_cost=5.0,
@@ -441,7 +447,7 @@ async def test_cost_rollup():
         IngredientMatch(
             name="truffle oil",
             catalog_item=None,
-            sysco_item_number=None,
+            source_item_id=None,
             provider=None,
             source="not_available",
             unit_cost=None,
@@ -450,7 +456,7 @@ async def test_cost_rollup():
         IngredientMatch(
             name="cream",
             catalog_item="HEAVY CREAM",
-            sysco_item_number="222",
+            source_item_id="222",
             provider="sysco",
             source="sysco_catalog",
             unit_cost=3.0,
@@ -480,11 +486,14 @@ async def test_partial_ingredient_failure(resolution_session_factory):
     # First ingredient resolves fine
     candidates = [
         CatalogCandidate(
-            item_number="11111",
+            source_item_id="11111",
             description="BUTTER UNSALTED",
             unit_of_measure="36 OZ",
             provider="sysco",
             similarity_score=0.95,
+            cost_per_case=40.0,
+            category=None,
+            brand=None,
         )
     ]
     price = PriceResult(cost_per_case=40.0, unit_of_measure="36 OZ")
@@ -510,7 +519,7 @@ async def test_partial_ingredient_failure(resolution_session_factory):
     good_output = {
         "name": "unsalted butter partial",
         "catalog_item": "BUTTER UNSALTED",
-        "sysco_item_number": "11111",
+        "source_item_id": "11111",
         "provider": "sysco",
         "source": "sysco_catalog",
         "unit_cost": 2.5,
@@ -569,11 +578,14 @@ async def test_resolve_checkpoint(resolution_session_factory):
 
     candidates = [
         CatalogCandidate(
-            item_number="33333",
+            source_item_id="33333",
             description="CREAM HEAVY",
             unit_of_measure="12/1 QT",
             provider="sysco",
             similarity_score=0.90,
+            cost_per_case=60.0,
+            category=None,
+            brand=None,
         )
     ]
     price = PriceResult(cost_per_case=60.0, unit_of_measure="12/1 QT")
@@ -598,7 +610,7 @@ async def test_resolve_checkpoint(resolution_session_factory):
     mock_output = {
         "name": "heavy cream",
         "catalog_item": "CREAM HEAVY",
-        "sysco_item_number": "33333",
+        "source_item_id": "33333",
         "provider": "sysco",
         "source": "sysco_catalog",
         "unit_cost": 5.0,

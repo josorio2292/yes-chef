@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from yes_chef.catalog.provider import ItemNotFoundError
-from yes_chef.catalog.service import CatalogCandidate, CatalogService
+from yes_chef.catalog.service import CatalogService
 from yes_chef.db.models import IngredientCache, WorkItem
 from yes_chef.decomposition.engine import Ingredient
 
@@ -33,7 +33,7 @@ class IngredientMatch(BaseModel):
 
     name: str
     catalog_item: str | None  # matched catalog description
-    sysco_item_number: str | None
+    source_item_id: str | None
     provider: str | None
     source: Literal["sysco_catalog", "estimated", "not_available"]
     unit_cost: float | None  # per-serving cost
@@ -90,7 +90,7 @@ Your tasks:
 
 Important:
 - Do NOT use regex to parse UOM — reason about it as text.
-- If no match is found, return source="not_available", sysco_item_number=None,
+- If no match is found, return source="not_available", source_item_id=None,
   unit_cost=None.
 - Always call update_cache before returning.
 """.strip()
@@ -123,19 +123,22 @@ matching_agent: Agent[ResolutionDeps, IngredientMatch] = Agent(
 
 @matching_agent.tool
 async def search_catalog(ctx: RunContext[ResolutionDeps], query: str) -> list[dict]:
-    """Search the Sysco catalog for candidates matching the query.
+    """Search the catalog for candidates matching the query.
 
-    Returns a list of candidate dicts with item_number, description,
-    unit_of_measure, provider, and similarity_score.
+    Returns enriched candidates with source_item_id, description,
+    unit_of_measure, cost_per_case, category, brand, provider, and similarity_score.
     """
-    candidates: list[CatalogCandidate] = await ctx.deps.catalog_service.search(query)
+    candidates = await ctx.deps.catalog_service.search(query)
     return [
         {
-            "item_number": c.item_number,
+            "source_item_id": c.source_item_id,
             "description": c.description,
             "unit_of_measure": c.unit_of_measure,
+            "cost_per_case": c.cost_per_case,
             "provider": c.provider,
             "similarity_score": c.similarity_score,
+            "category": c.category,
+            "brand": c.brand,
         }
         for c in candidates
     ]
@@ -143,14 +146,14 @@ async def search_catalog(ctx: RunContext[ResolutionDeps], query: str) -> list[di
 
 @matching_agent.tool
 async def get_price(
-    ctx: RunContext[ResolutionDeps], item_number: str, provider: str
+    ctx: RunContext[ResolutionDeps], source_item_id: str, provider: str
 ) -> dict:
     """Retrieve pricing for a catalog item.
 
     Returns cost_per_case and unit_of_measure.
     The agent (LLM) interprets the UOM string to compute per-serving cost.
     """
-    price_result = ctx.deps.catalog_service.get_price(item_number, provider)
+    price_result = ctx.deps.catalog_service.get_price(source_item_id, provider)
     return {
         "cost_per_case": price_result.cost_per_case,
         "unit_of_measure": price_result.unit_of_measure,
@@ -161,7 +164,7 @@ async def get_price(
 async def update_cache(
     ctx: RunContext[ResolutionDeps],
     ingredient_name: str,
-    item_number: str | None,
+    source_item_id: str | None,
     source: str,
     provider: str | None,
 ) -> str:
@@ -177,14 +180,14 @@ async def update_cache(
                 pg_insert(IngredientCache)
                 .values(
                     ingredient_name=normalized,
-                    sysco_item_number=item_number,
+                    source_item_id=source_item_id,
                     source=source,
                     provider=provider,
                 )
                 .on_conflict_do_update(
                     index_elements=["ingredient_name"],
                     set_={
-                        "sysco_item_number": item_number,
+                        "source_item_id": source_item_id,
                         "source": source,
                         "provider": provider,
                         "updated_at": func.now(),
@@ -193,7 +196,7 @@ async def update_cache(
             )
             await session.execute(stmt)
 
-    return f"Cached: {normalized} → {item_number} ({source})"
+    return f"Cached: {normalized} → {source_item_id} ({source})"
 
 
 # ---------------------------------------------------------------------------
@@ -231,24 +234,24 @@ async def resolve_from_cache(
             return IngredientMatch(
                 name=ingredient.name,
                 catalog_item=None,
-                sysco_item_number=None,
+                source_item_id=None,
                 provider=None,
                 source="not_available",
                 unit_cost=None,
                 reasoning="Resolved from cache (not_available)",
             )
 
-        # Cached item number — try price lookup
-        item_number = cache_entry.sysco_item_number
+        # Cached source_item_id — try price lookup
+        source_item_id = cache_entry.source_item_id
         provider = cache_entry.provider
 
     try:
-        price_result = catalog_service.get_price(item_number, provider)
-        logger.debug("Cache hit: %s → %s", normalized, item_number)
+        price_result = catalog_service.get_price(source_item_id, provider)
+        logger.debug("Cache hit: %s → %s", normalized, source_item_id)
         return IngredientMatch(
             name=ingredient.name,
             catalog_item=None,  # not stored in cache; agent result had it
-            sysco_item_number=item_number,
+            source_item_id=source_item_id,
             provider=provider,
             source="sysco_catalog",
             unit_cost=price_result.cost_per_case,  # cached cost (no UOM re-parsing)
@@ -258,7 +261,7 @@ async def resolve_from_cache(
         logger.warning(
             "Cache invalidation: %s → %s (%s). Falling through to agent.",
             normalized,
-            item_number,
+            source_item_id,
             exc,
         )
         # Invalidate stale cache entry in a short-lived session
@@ -334,7 +337,7 @@ async def resolve_item(
             logger.info(
                 "Agent resolved %s → %s (%s)",
                 ingredient.name,
-                match.sysco_item_number,
+                match.source_item_id,
                 match.source,
             )
             # Guarantee cache is populated after agent resolution.
@@ -347,14 +350,14 @@ async def resolve_item(
                         pg_insert(IngredientCache)
                         .values(
                             ingredient_name=normalized,
-                            sysco_item_number=match.sysco_item_number,
+                            source_item_id=match.source_item_id,
                             source=match.source,
                             provider=match.provider,
                         )
                         .on_conflict_do_update(
                             index_elements=["ingredient_name"],
                             set_={
-                                "sysco_item_number": match.sysco_item_number,
+                                "source_item_id": match.source_item_id,
                                 "source": match.source,
                                 "provider": match.provider,
                                 "updated_at": func.now(),
@@ -368,7 +371,7 @@ async def resolve_item(
             match = IngredientMatch(
                 name=ingredient.name,
                 catalog_item=None,
-                sysco_item_number=None,
+                source_item_id=None,
                 provider=None,
                 source="not_available",
                 unit_cost=None,
