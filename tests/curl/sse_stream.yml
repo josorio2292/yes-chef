@@ -1,0 +1,9 @@
+name: SSE stream endpoint
+depends_on: Submit a valid job
+request:
+  method: GET
+  url: /jobs/${prev.job_id}/stream
+expect:
+  status: 200
+  headers:
+    content-type: text/event-stream

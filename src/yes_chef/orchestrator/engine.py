@@ -17,6 +17,7 @@ from yes_chef.decomposition.engine import (
     Ingredient,
     decompose_item,
 )
+from yes_chef.events import EventBus, SSEEvent
 from yes_chef.resolution.engine import ResolveResult, resolve_item
 
 logger = logging.getLogger(__name__)
@@ -48,12 +49,14 @@ class Orchestrator:
         decompose_fn: DecomposeFn | None = None,
         resolve_fn: ResolveFn | None = None,
         max_concurrent: int = 3,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._catalog_service = catalog_service
         self._decompose_fn: DecomposeFn = decompose_fn or decompose_item
         self._resolve_fn: ResolveFn = resolve_fn or resolve_item
         self._max_concurrent = max_concurrent
+        self._event_bus: EventBus | None = event_bus
 
     # ------------------------------------------------------------------
     # Public API
@@ -130,7 +133,7 @@ class Orchestrator:
 
         async def process_with_semaphore(work_item: WorkItem) -> dict | None:
             async with semaphore:
-                return await self._process_item(work_item)
+                return await self._process_item(work_item, job_id)
 
         tasks = [process_with_semaphore(wi) for wi in pending_items]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -159,13 +162,26 @@ class Orchestrator:
                 job.status = "completed"
             await session.commit()
 
+        await self._publish(
+            str(job_id),
+            SSEEvent(
+                event="job_completed",
+                data={
+                    "job_id": str(job_id),
+                    "timestamp": _now_iso(),
+                },
+            ),
+        )
+
         return quote
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _process_item(self, work_item: WorkItem) -> dict | None:
+    async def _process_item(
+        self, work_item: WorkItem, job_id: uuid.UUID | None = None
+    ) -> dict | None:
         """Process a single WorkItem through decompose → resolve.
 
         Returns a line item dict on success, None on failure.
@@ -174,6 +190,7 @@ class Orchestrator:
         item_id = work_item.id
         item_name = work_item.item_name
         category = work_item.category
+        job_id_str = str(job_id) if job_id is not None else str(work_item.job_id)
 
         try:
             # ----------------------------------------------------------------
@@ -192,6 +209,19 @@ class Orchestrator:
                     wi = await session.get(WorkItem, item_id)
                     wi.status = "decomposing"
                     await session.commit()
+
+                await self._publish(
+                    job_id_str,
+                    SSEEvent(
+                        event="item_step_change",
+                        data={
+                            "job_id": job_id_str,
+                            "item_name": item_name,
+                            "status": "decomposing",
+                            "timestamp": _now_iso(),
+                        },
+                    ),
+                )
 
                 async with self._session_factory() as session:
                     decomp_result = await self._decompose_fn(
@@ -232,6 +262,19 @@ class Orchestrator:
                 wi.status = "resolving"
                 await session.commit()
 
+            await self._publish(
+                job_id_str,
+                SSEEvent(
+                    event="item_step_change",
+                    data={
+                        "job_id": job_id_str,
+                        "item_name": item_name,
+                        "status": "resolving",
+                        "timestamp": _now_iso(),
+                    },
+                ),
+            )
+
             async with self._session_factory() as session:
                 resolve_result = await self._resolve_fn(
                     ingredients, self._catalog_service, item_id, session
@@ -244,6 +287,23 @@ class Orchestrator:
                     "ingredient_cost_per_unit": resolve_result.ingredient_cost_per_unit,
                 }
                 await session.commit()
+
+            await self._publish(
+                job_id_str,
+                SSEEvent(
+                    event="item_completed",
+                    data={
+                        "job_id": job_id_str,
+                        "item_name": item_name,
+                        "data": {
+                            "ingredient_cost_per_unit": (
+                                resolve_result.ingredient_cost_per_unit
+                            ),
+                        },
+                        "timestamp": _now_iso(),
+                    },
+                ),
+            )
 
             # Build line item from resolve result
             return {
@@ -270,7 +330,24 @@ class Orchestrator:
                     wi.status = "failed"
                     wi.error = str(exc)
                     await session.commit()
+            await self._publish(
+                job_id_str,
+                SSEEvent(
+                    event="item_failed",
+                    data={
+                        "job_id": job_id_str,
+                        "item_name": item_name,
+                        "error": str(exc),
+                        "timestamp": _now_iso(),
+                    },
+                ),
+            )
             return None
+
+    async def _publish(self, job_id: str, event: SSEEvent) -> None:
+        """Publish an event to the event bus if one is configured."""
+        if self._event_bus is not None:
+            await self._event_bus.publish(job_id, event)
 
     async def _get_item_description(self, work_item_id: uuid.UUID) -> str:
         """Fetch the item description from the job's menu_spec."""
@@ -337,3 +414,8 @@ def _find_quantity(ingredients: list[Ingredient], name: str) -> str:
         if ing.name.lower().strip() == name_lower:
             return ing.quantity
     return ""
+
+
+def _now_iso() -> str:
+    """Return the current UTC time as an ISO 8601 string."""
+    return datetime.now(UTC).isoformat()

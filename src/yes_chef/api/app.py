@@ -8,15 +8,19 @@ Exposes:
 """
 
 import asyncio
+import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from yes_chef.events import EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +134,7 @@ def _build_quote_from_job(job: Any, work_items: list[Any] | None = None) -> dict
 def create_app(
     orchestrator: Any | None = None,
     session_factory: async_sessionmaker | None = None,
+    event_bus: EventBus | None = None,
 ) -> FastAPI:
     """Create and return the FastAPI application.
 
@@ -141,6 +146,9 @@ def create_app(
     session_factory:
         An async session factory.  If *None*, the production factory from
         ``yes_chef.db.engine`` is used.
+    event_bus:
+        An :class:`~yes_chef.events.EventBus` instance for SSE streaming.
+        If *None*, a new one is created at startup.
     """
 
     @asynccontextmanager
@@ -153,6 +161,9 @@ def create_app(
 
             application.state.session_factory = default_factory
 
+        # Set up event bus
+        application.state.event_bus = event_bus if event_bus is not None else EventBus()
+
         if orchestrator is not None:
             application.state.orchestrator = orchestrator
         else:
@@ -163,6 +174,7 @@ def create_app(
             application.state.orchestrator = Orchestrator(
                 session_factory=application.state.session_factory,
                 catalog_service=catalog,
+                event_bus=application.state.event_bus,
             )
         yield
         # Shutdown: nothing to clean up
@@ -245,6 +257,37 @@ def create_app(
         _, items = await _get_job_with_items(job_id, sf)
         quote = _build_quote_from_job(job, items)
         return quote
+
+    # ------------------------------------------------------------------
+    # GET /jobs/{job_id}/stream  → 200 text/event-stream | 404
+    # ------------------------------------------------------------------
+
+    @app.get("/jobs/{job_id}/stream")
+    async def stream_events(job_id: uuid.UUID) -> StreamingResponse:
+        sf = app.state.session_factory
+        job = await _get_job_by_id(job_id, sf)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        bus: EventBus = app.state.event_bus
+        queue = bus.subscribe(str(job_id))
+
+        async def event_generator():
+            # Send a connection confirmation event first
+            yield f"event: connected\ndata: {json.dumps({'job_id': str(job_id)})}\n\n"
+            try:
+                while True:
+                    event = await queue.get()
+                    yield f"event: {event.event}\ndata: {json.dumps(event.data)}\n\n"
+                    if event.event == "job_completed":
+                        break
+            finally:
+                bus.unsubscribe(str(job_id), queue)
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+        )
 
     return app
 
