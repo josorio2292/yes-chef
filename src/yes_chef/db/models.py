@@ -22,7 +22,9 @@ class Job(Base):
     venue: Mapped[str | None] = mapped_column(String, nullable=True)
     guest_count_estimate: Mapped[int | None] = mapped_column(nullable=True)
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="pending", index=True
+    )
     menu_spec: Mapped[Any | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -43,7 +45,7 @@ class WorkItem(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False, index=True
     )
     item_name: Mapped[str] = mapped_column(String, nullable=False)
     category: Mapped[str] = mapped_column(String, nullable=False)
@@ -58,6 +60,8 @@ class WorkItem(Base):
     )
 
     job: Mapped["Job"] = relationship("Job", back_populates="work_items")
+
+    __table_args__ = (Index("ix_work_items_job_id_status", "job_id", "status"),)
 
 
 class IngredientCache(Base):
