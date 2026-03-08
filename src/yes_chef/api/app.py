@@ -10,6 +10,7 @@ Exposes:
 import asyncio
 import json
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -167,10 +168,18 @@ def create_app(
         if orchestrator is not None:
             application.state.orchestrator = orchestrator
         else:
+            from yes_chef.catalog.provider import SyscoCsvProvider
             from yes_chef.catalog.service import CatalogService
             from yes_chef.orchestrator.engine import Orchestrator
 
-            catalog = CatalogService()
+            csv_path = os.environ.get("SYSCO_CSV_PATH", "data/sysco_catalog.csv")
+            sysco = SyscoCsvProvider(csv_path)
+            sysco.load_catalog()
+            catalog = CatalogService(
+                providers={"sysco": sysco},
+                session_factory=application.state.session_factory,
+            )
+            await catalog.load_embeddings()
             application.state.orchestrator = Orchestrator(
                 session_factory=application.state.session_factory,
                 catalog_service=catalog,
