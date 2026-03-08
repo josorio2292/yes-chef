@@ -6,11 +6,12 @@ import pathlib
 import numpy as np
 import pytest
 import pytest_asyncio
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from yes_chef.catalog.provider import SyscoCsvProvider
 from yes_chef.catalog.service import CatalogCandidate, CatalogService
-from yes_chef.db.models import Base
+from yes_chef.db.models import Base, CatalogItem
 
 DATA_DIR = pathlib.Path(__file__).parent.parent / "data"
 SYSCO_CSV = DATA_DIR / "sysco_catalog.csv"
@@ -141,7 +142,7 @@ async def catalog_service(providers, catalog_session_factory):
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def embedded_catalog(catalog_service):
     """CatalogService with embeddings already written to the test DB."""
-    await catalog_service.embed_catalog()
+    await catalog_service.ingest("sysco")
     return catalog_service
 
 
@@ -153,30 +154,28 @@ async def smart_embedded_catalog(providers, catalog_session_factory):
         session_factory=catalog_session_factory,
         embed_fn=_smart_embed_batch,
     )
-    await service.embed_catalog()
+    await service.ingest("sysco")
     return service
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
-async def test_embed_catalog_stores_embeddings(
-    providers, catalog_session_factory
-) -> None:
-    """embed_catalog() should store one embedding row per catalog item (565)."""
+async def test_ingest_stores_catalog_items(providers, catalog_session_factory) -> None:
+    """ingest() should store one catalog_item row per catalog item (565)."""
     service = CatalogService(
         providers=providers,
         session_factory=catalog_session_factory,
         embed_fn=_fake_embed_batch,
     )
-    await service.embed_catalog()
-
-    from sqlalchemy import func, select
-
-    from yes_chef.db.models import CatalogEmbedding
+    await service.ingest("sysco")
 
     async with catalog_session_factory() as sess:
-        result = await sess.execute(select(func.count()).select_from(CatalogEmbedding))
+        result = await sess.execute(
+            select(func.count())
+            .select_from(CatalogItem)
+            .where(CatalogItem.is_active == True)  # noqa: E712
+        )
         count = result.scalar_one()
 
     assert count == 565
@@ -197,6 +196,11 @@ async def test_search_returns_top_5(embedded_catalog) -> None:
     scores = [r.similarity_score for r in results]
     assert scores == sorted(scores, reverse=True)
 
+    # Enriched fields from catalog_items table
+    for r in results:
+        assert r.unit_of_measure != "", f"Missing UOM for {r.source_item_id}"
+        assert r.cost_per_case > 0, f"Missing cost for {r.source_item_id}"
+
 
 async def test_search_correct_match(smart_embedded_catalog) -> None:
     """search('applewood smoked bacon') must rank the bacon item first."""
@@ -204,8 +208,8 @@ async def test_search_correct_match(smart_embedded_catalog) -> None:
 
     assert len(results) > 0
     top = results[0]
-    assert top.item_number == "4842788", (
-        f"Expected item 4842788 (bacon) at rank 1, got {top.item_number!r} "
+    assert top.source_item_id == "4842788", (
+        f"Expected item 4842788 (bacon) at rank 1, got {top.source_item_id!r} "
         f"({top.description!r})"
     )
 
@@ -216,11 +220,65 @@ async def test_search_known_pairs(smart_embedded_catalog) -> None:
         results = await smart_embedded_catalog.search(query, top_k=5)
         assert len(results) > 0, f"No results for query: {query!r}"
         top = results[0]
-        assert top.item_number == expected_item_number, (
+        assert top.source_item_id == expected_item_number, (
             f"Query {query!r}: expected item {expected_item_number!r} at rank 1, "
-            f"got {top.item_number!r} ({top.description!r}, "
+            f"got {top.source_item_id!r} ({top.description!r}, "
             f"score={top.similarity_score:.4f})"
         )
+
+
+async def test_ingest_soft_deletes(providers, catalog_session_factory) -> None:
+    """Re-ingestion soft-deletes old rows and inserts new active ones."""
+    service = CatalogService(
+        providers=providers,
+        session_factory=catalog_session_factory,
+        embed_fn=_fake_embed_batch,
+    )
+    await service.ingest("sysco")
+
+    # Count active items
+    async with catalog_session_factory() as sess:
+        active = await sess.execute(
+            select(func.count())
+            .select_from(CatalogItem)
+            .where(CatalogItem.is_active == True)  # noqa: E712
+        )
+        active_count = active.scalar_one()
+
+    assert active_count == 565
+
+    # Re-ingest — should still have 565 active
+    await service.ingest("sysco")
+
+    async with catalog_session_factory() as sess:
+        active = await sess.execute(
+            select(func.count())
+            .select_from(CatalogItem)
+            .where(CatalogItem.is_active == True)  # noqa: E712
+        )
+        active_count_after = active.scalar_one()
+
+    assert active_count_after == 565
+
+
+async def test_has_embeddings_empty_table(providers, catalog_session_factory) -> None:
+    """has_embeddings() returns False when no active rows exist."""
+    service = CatalogService(
+        providers=providers,
+        session_factory=catalog_session_factory,
+        embed_fn=_fake_embed_batch,
+    )
+
+    # Deactivate all rows
+    async with catalog_session_factory() as sess:
+        async with sess.begin():
+            await sess.execute(update(CatalogItem).values(is_active=False))
+
+    assert await service.has_embeddings() is False
+
+    # Re-ingest to restore for other tests
+    await service.ingest("sysco")
+    assert await service.has_embeddings() is True
 
 
 async def test_get_price_delegates_to_provider(

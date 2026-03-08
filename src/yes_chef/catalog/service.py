@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from yes_chef.catalog.provider import CatalogProvider, PriceResult
-from yes_chef.db.models import CatalogEmbedding
+from yes_chef.db.models import CatalogItem
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +25,14 @@ _EMBEDDING_MODEL = "text-embedding-3-small"
 
 @dataclass
 class CatalogCandidate:
-    item_number: str
+    source_item_id: str
     description: str
     unit_of_measure: str
+    cost_per_case: float
     provider: str
     similarity_score: float
+    category: str | None = None
+    brand: str | None = None
 
 
 def _make_openai_embed_fn() -> EmbedFn:
@@ -68,7 +72,7 @@ def _make_openai_embed_fn() -> EmbedFn:
 
 
 class CatalogService:
-    """Catalog service: embeds items, stores in Postgres via pgvector, searches by similarity."""
+    """Catalog service: embeds items, stores in Postgres via pgvector, searches by similarity."""  # noqa: E501
 
     def __init__(
         self,
@@ -89,114 +93,119 @@ class CatalogService:
         return self._embed_fn
 
     async def has_embeddings(self) -> bool:
-        """Return True if at least one embedding row exists in the DB."""
+        """Return True if at least one active embedding row exists in the DB."""
         async with self._session_factory() as session:
             result = await session.execute(
-                select(func.count()).select_from(CatalogEmbedding)
+                select(func.count())
+                .select_from(CatalogItem)
+                .where(CatalogItem.is_active == True)  # noqa: E712
             )
             return result.scalar_one() > 0
 
-    async def embed_catalog(self) -> None:
-        """Embed all catalog items and store in the DB.
+    async def ingest(self, provider_name: str) -> None:
+        """ETL: load provider, embed descriptions, upsert into catalog_items with soft deletes."""  # noqa: E501
+        if provider_name not in self._providers:
+            raise ValueError(f"Unknown provider {provider_name!r}")
 
-        Existing rows are deleted and replaced so this is idempotent.
-        """
-        # Collect all items from all providers
-        items: list[tuple[str, str, str, str]] = []  # (number, desc, uom, provider)
-        for provider_name, provider in self._providers.items():
-            catalog = provider.load_catalog()
-            for item in catalog:
-                items.append(
-                    (
-                        item.item_number,
-                        item.description,
-                        item.unit_of_measure,
-                        provider_name,
-                    )
-                )
+        provider = self._providers[provider_name]
+        records = provider.load_catalog()
 
-        logger.info("Embedding %d catalog items…", len(items))
+        logger.info("Ingesting %d items from provider %r…", len(records), provider_name)
 
-        descriptions = [desc for _, desc, _, _ in items]
-
-        # Embed in batches
+        # Embed descriptions in batches
+        descriptions = [r.description for r in records]
         all_embeddings: list[np.ndarray] = []
         for i in range(0, len(descriptions), _DEFAULT_BATCH_SIZE):
             batch = descriptions[i : i + _DEFAULT_BATCH_SIZE]
             batch_embeddings = await self._get_embed_fn()(batch)
             all_embeddings.extend(batch_embeddings)
-            logger.debug(
-                "Embedded batch %d/%d",
-                min(i + _DEFAULT_BATCH_SIZE, len(descriptions)),
-                len(descriptions),
-            )
 
-        # Persist to DB (replace all existing rows)
         async with self._session_factory() as sess:
             async with sess.begin():
-                await sess.execute(delete(CatalogEmbedding))
+                # Soft-delete existing rows for this provider
+                await sess.execute(
+                    update(CatalogItem)
+                    .where(CatalogItem.provider == provider_name)
+                    .where(CatalogItem.is_active == True)  # noqa: E712
+                    .values(is_active=False)
+                )
 
-                for (item_number, description, _uom, provider_name), embedding in zip(
-                    items, all_embeddings, strict=True
-                ):
-                    record = CatalogEmbedding(
-                        item_number=item_number,
-                        description=description,
-                        provider=provider_name,
-                        embedding=embedding.astype(np.float32).tolist(),
+                # Upsert new rows
+                for record, embedding in zip(records, all_embeddings, strict=True):
+                    stmt = (
+                        pg_insert(CatalogItem)
+                        .values(
+                            source_item_id=record.source_item_id,
+                            provider=record.provider,
+                            description=record.description,
+                            unit_of_measure=record.unit_of_measure,
+                            cost_per_case=record.cost_per_case,
+                            category=record.category,
+                            brand=record.brand,
+                            source_metadata=record.source_metadata,
+                            embedding=embedding.astype(np.float32).tolist(),
+                            is_active=True,
+                        )
+                        .on_conflict_do_update(
+                            index_elements=["provider", "source_item_id"],
+                            set_={
+                                "description": record.description,
+                                "unit_of_measure": record.unit_of_measure,
+                                "cost_per_case": record.cost_per_case,
+                                "category": record.category,
+                                "brand": record.brand,
+                                "source_metadata": record.source_metadata,
+                                "embedding": embedding.astype(np.float32).tolist(),
+                                "is_active": True,
+                            },
+                        )
                     )
-                    sess.add(record)
+                    await sess.execute(stmt)
 
-        logger.info("Stored %d embeddings in DB.", len(items))
+        logger.info("Ingested %d items for provider %r.", len(records), provider_name)
 
     async def search(self, query: str, top_k: int = 5) -> list[CatalogCandidate]:
-        """Embed the query and return top-k candidates by cosine similarity via pgvector."""
+        """Embed the query and return top-k candidates by cosine similarity via pgvector."""  # noqa: E501
         embed_fn = self._get_embed_fn()
         query_vectors = await embed_fn([query])
         query_vec = query_vectors[0].tolist()
 
         async with self._session_factory() as session:
-            # pgvector cosine distance operator: <=>
-            # similarity = 1 - distance
             stmt = (
                 select(
-                    CatalogEmbedding.item_number,
-                    CatalogEmbedding.description,
-                    CatalogEmbedding.provider,
-                    (1 - CatalogEmbedding.embedding.cosine_distance(query_vec)).label(
+                    CatalogItem.source_item_id,
+                    CatalogItem.description,
+                    CatalogItem.unit_of_measure,
+                    CatalogItem.cost_per_case,
+                    CatalogItem.provider,
+                    CatalogItem.category,
+                    CatalogItem.brand,
+                    (1 - CatalogItem.embedding.cosine_distance(query_vec)).label(
                         "similarity"
                     ),
                 )
-                .order_by(CatalogEmbedding.embedding.cosine_distance(query_vec))
+                .where(CatalogItem.is_active == True)  # noqa: E712
+                .order_by(CatalogItem.embedding.cosine_distance(query_vec))
                 .limit(top_k)
             )
             result = await session.execute(stmt)
             rows = result.all()
 
-        candidates = []
-        for row in rows:
-            provider = self._providers.get(row.provider)
-            uom = ""
-            if provider:
-                try:
-                    price_result = provider.get_price(row.item_number)
-                    uom = price_result.unit_of_measure
-                except Exception:
-                    pass
-
-            candidates.append(
-                CatalogCandidate(
-                    item_number=row.item_number,
-                    description=row.description,
-                    unit_of_measure=uom,
-                    provider=row.provider,
-                    similarity_score=float(row.similarity),
-                )
+        return [
+            CatalogCandidate(
+                source_item_id=row.source_item_id,
+                description=row.description,
+                unit_of_measure=row.unit_of_measure,
+                cost_per_case=float(row.cost_per_case),
+                provider=row.provider,
+                similarity_score=float(row.similarity),
+                category=row.category,
+                brand=row.brand,
             )
+            for row in rows
+        ]
 
-        return candidates
-
-    def get_price(self, item_number: str, provider: str) -> PriceResult:
+    def get_price(self, source_item_id: str, provider: str) -> PriceResult:
         """Return pricing from the named provider.
 
         Raises ValueError for unknown providers and ItemNotFoundError for
@@ -207,4 +216,4 @@ class CatalogService:
                 f"Unknown provider {provider!r}. "
                 f"Available: {list(self._providers.keys())}"
             )
-        return self._providers[provider].get_price(item_number)
+        return self._providers[provider].get_price(source_item_id)
