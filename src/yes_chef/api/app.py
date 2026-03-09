@@ -75,9 +75,9 @@ async def _get_all_quotes(
     session_factory: async_sessionmaker,
 ) -> list[Any]:
     """Return all Quotes with their menu_items, ordered by created_at descending."""
-    from yes_chef.db.models import Quote
-
     from sqlalchemy.orm import selectinload
+
+    from yes_chef.db.models import Quote
 
     async with session_factory() as session:
         result = await session.execute(
@@ -93,7 +93,7 @@ async def _get_quote_with_menu_items(
     session_factory: async_sessionmaker,
 ) -> tuple[Any | None, list[Any]]:
     """Return (Quote, [MenuItem]) or (None, []) if not found."""
-    from yes_chef.db.models import Quote, MenuItem
+    from yes_chef.db.models import MenuItem, Quote
 
     async with session_factory() as session:
         quote = await session.get(Quote, quote_id)
@@ -115,6 +115,19 @@ async def _get_quote_by_id(
 
     async with session_factory() as session:
         return await session.get(Quote, quote_id)
+
+
+async def _get_stalled_quotes(
+    session_factory: async_sessionmaker,
+) -> list[Any]:
+    """Return all Quotes whose status is 'processing' (stalled mid-pipeline)."""
+    from yes_chef.db.models import Quote
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(Quote).where(Quote.status == "processing")
+        )
+        return list(result.scalars().all())
 
 
 def _build_quote_from_quote(quote: Any, menu_items: list[Any] | None = None) -> dict:
@@ -221,6 +234,21 @@ def create_app(
                 catalog_service=catalog,
                 event_bus=application.state.event_bus,
             )
+
+        # Resume any quotes that were mid-processing when the server last stopped
+        try:
+            stalled = await _get_stalled_quotes(application.state.session_factory)
+        except Exception:
+            logger.exception(
+                "Failed to query stalled quotes during startup — skipping recovery"
+            )
+            stalled = []
+        for quote in stalled:
+            logger.info("Resuming stalled quote %s", quote.id)
+            asyncio.create_task(
+                _run_processing(application.state.orchestrator, quote.id)
+            )
+
         yield
         # Shutdown: nothing to clean up
 

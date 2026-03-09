@@ -101,9 +101,13 @@ def client():
     mock_orch.process_quote = AsyncMock()
 
     app = create_app(orchestrator=mock_orch)
-    with TestClient(app, raise_server_exceptions=True) as c:
-        c._mock_orch = mock_orch  # expose for per-test configuration
-        yield c
+    with patch(
+        "yes_chef.api.app._get_stalled_quotes", new_callable=AsyncMock
+    ) as mock_stalled:
+        mock_stalled.return_value = []
+        with TestClient(app, raise_server_exceptions=True) as c:
+            c._mock_orch = mock_orch  # expose for per-test configuration
+            yield c
 
 
 # ---------------------------------------------------------------------------
@@ -121,9 +125,13 @@ def client_with_db():
     mock_orch.process_quote = AsyncMock()
 
     app = create_app(orchestrator=mock_orch)
-    with TestClient(app, raise_server_exceptions=True) as c:
-        c._mock_orch = mock_orch
-        yield c
+    with patch(
+        "yes_chef.api.app._get_stalled_quotes", new_callable=AsyncMock
+    ) as mock_stalled:
+        mock_stalled.return_value = []
+        with TestClient(app, raise_server_exceptions=True) as c:
+            c._mock_orch = mock_orch
+            yield c
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +317,7 @@ def _make_mock_quote_with_attrs(
     mock_quote.status = status
     mock_quote.menu_items = menu_items or []
     mock_quote.created_at = created_at or dt.datetime(
-        2025, 1, 1, 12, 0, 0, tzinfo=dt.timezone.utc
+        2025, 1, 1, 12, 0, 0, tzinfo=dt.UTC
     )
     return mock_quote
 
@@ -334,12 +342,12 @@ def test_list_quotes_descending_order(client):
     older = _make_mock_quote_with_attrs(
         older_id,
         event="Older Event",
-        created_at=dt.datetime(2025, 1, 1, tzinfo=dt.timezone.utc),
+        created_at=dt.datetime(2025, 1, 1, tzinfo=dt.UTC),
     )
     newer = _make_mock_quote_with_attrs(
         newer_id,
         event="Newer Event",
-        created_at=dt.datetime(2025, 6, 1, tzinfo=dt.timezone.utc),
+        created_at=dt.datetime(2025, 6, 1, tzinfo=dt.UTC),
     )
 
     # Return already-sorted (newest first) as the endpoint should deliver
@@ -371,7 +379,7 @@ def test_list_quotes_summary_fields(client):
         guest_count_estimate=200,
         status="completed_with_errors",
         menu_items=[mi_completed, mi_failed, mi_pending],
-        created_at=dt.datetime(2025, 9, 1, tzinfo=dt.timezone.utc),
+        created_at=dt.datetime(2025, 9, 1, tzinfo=dt.UTC),
     )
 
     with patch("yes_chef.api.app._get_all_quotes") as mock_getter:
@@ -409,7 +417,7 @@ def test_list_quotes_item_counts(client):
         q1_id,
         status="completed_with_errors",
         menu_items=items,
-        created_at=dt.datetime(2025, 5, 1, tzinfo=dt.timezone.utc),
+        created_at=dt.datetime(2025, 5, 1, tzinfo=dt.UTC),
     )
 
     with patch("yes_chef.api.app._get_all_quotes") as mock_getter:
@@ -421,3 +429,107 @@ def test_list_quotes_item_counts(client):
     assert summary["total_items"] == 3
     assert summary["completed_items"] == 2
     assert summary["failed_items"] == 1
+
+
+# ---------------------------------------------------------------------------
+# test_startup_resumes_stalled_quotes
+# ---------------------------------------------------------------------------
+
+
+def test_startup_resumes_stalled_quotes():
+    """Quotes with status='processing' are re-queued when the app starts."""
+
+    from yes_chef.api.app import create_app
+
+    stalled_id = uuid.uuid4()
+    stalled_quote = _make_mock_quote(stalled_id, status="processing")
+
+    mock_orch = MagicMock()
+    mock_orch.submit_quote = AsyncMock()
+    mock_orch.process_quote = AsyncMock()
+
+    with patch(
+        "yes_chef.api.app._get_stalled_quotes", new_callable=AsyncMock
+    ) as mock_get_stalled:
+        mock_get_stalled.return_value = [stalled_quote]
+
+        app = create_app(orchestrator=mock_orch)
+        with TestClient(app, raise_server_exceptions=True):
+            # Allow the event loop to run any created tasks
+            pass
+
+    mock_orch.process_quote.assert_called_once_with(stalled_id)
+
+
+def test_startup_does_not_resume_terminal_quotes():
+    """Quotes in terminal states (completed, pending) are NOT resumed on startup."""
+    from yes_chef.api.app import create_app
+
+    mock_orch = MagicMock()
+    mock_orch.submit_quote = AsyncMock()
+    mock_orch.process_quote = AsyncMock()
+
+    with patch(
+        "yes_chef.api.app._get_stalled_quotes", new_callable=AsyncMock
+    ) as mock_get_stalled:
+        # No stalled quotes — only terminal ones exist in the DB
+        mock_get_stalled.return_value = []
+
+        app = create_app(orchestrator=mock_orch)
+        with TestClient(app, raise_server_exceptions=True):
+            pass
+
+    mock_orch.process_quote.assert_not_called()
+
+
+def test_startup_resumes_multiple_stalled_quotes():
+    """All stalled quotes are individually scheduled for recovery."""
+    from yes_chef.api.app import create_app
+
+    id_a = uuid.uuid4()
+    id_b = uuid.uuid4()
+    stalled_a = _make_mock_quote(id_a, status="processing")
+    stalled_b = _make_mock_quote(id_b, status="processing")
+
+    mock_orch = MagicMock()
+    mock_orch.submit_quote = AsyncMock()
+    mock_orch.process_quote = AsyncMock()
+
+    with patch(
+        "yes_chef.api.app._get_stalled_quotes", new_callable=AsyncMock
+    ) as mock_get_stalled:
+        mock_get_stalled.return_value = [stalled_a, stalled_b]
+
+        app = create_app(orchestrator=mock_orch)
+        with TestClient(app, raise_server_exceptions=True):
+            pass
+
+    assert mock_orch.process_quote.call_count == 2
+    called_ids = {call.args[0] for call in mock_orch.process_quote.call_args_list}
+    assert called_ids == {id_a, id_b}
+
+
+# ---------------------------------------------------------------------------
+# test_startup_db_failure_is_handled_gracefully
+# ---------------------------------------------------------------------------
+
+
+def test_startup_db_failure_is_handled_gracefully():
+    """DB query raising during startup does not crash the server."""
+    from yes_chef.api.app import create_app
+
+    mock_orch = MagicMock()
+    mock_orch.submit_quote = AsyncMock()
+    mock_orch.process_quote = AsyncMock()
+
+    with patch(
+        "yes_chef.api.app._get_stalled_quotes", new_callable=AsyncMock
+    ) as mock_get_stalled:
+        mock_get_stalled.side_effect = Exception("DB unreachable")
+
+        app = create_app(orchestrator=mock_orch)
+        with TestClient(app, raise_server_exceptions=True) as c:
+            response = c.get("/health")
+
+    assert response.status_code == 200
+    mock_orch.process_quote.assert_not_called()
