@@ -14,7 +14,10 @@ import { cn } from '@/lib/utils'
 
 type IngredientSource = 'sysco_catalog' | 'estimated' | 'not_available'
 
-const SOURCE_MAP: Record<IngredientSource, { label: string; className: string }> = {
+const SOURCE_MAP: Record<
+  IngredientSource,
+  { label: string; className: string }
+> = {
   sysco_catalog: {
     label: 'Catalog',
     className: 'bg-copper-subtle text-copper',
@@ -30,11 +33,17 @@ const SOURCE_MAP: Record<IngredientSource, { label: string; className: string }>
 }
 
 function SourceBadge({ source }: { source: string }) {
-  const config = SOURCE_MAP[source as IngredientSource] ?? { label: source, className: 'bg-surface text-text-secondary' }
+  const config = SOURCE_MAP[source as IngredientSource] ?? {
+    label: source,
+    className: 'bg-surface text-text-secondary',
+  }
   return (
     <Badge
       variant="outline"
-      className={cn('font-mono text-[11px] border-border-subtle', config.className)}
+      className={cn(
+        'font-mono text-[11px] border-border-subtle',
+        config.className
+      )}
     >
       {config.label}
     </Badge>
@@ -75,7 +84,10 @@ function IngredientTable({ ingredients }: { ingredients: Ingredient[] }) {
       </thead>
       <tbody>
         {ingredients.map((ing, idx) => (
-          <tr key={idx} className="border-t border-border-subtle hover:bg-surface-hover transition-colors">
+          <tr
+            key={idx}
+            className="border-t border-border-subtle hover:bg-surface-hover transition-colors"
+          >
             <td className="px-5 py-3 text-text-primary min-w-[120px]">
               {ing.name}
             </td>
@@ -89,9 +101,7 @@ function IngredientTable({ ingredients }: { ingredients: Ingredient[] }) {
               <SourceBadge source={ing.source} />
             </td>
             <td className="px-5 py-3 font-mono tabular-nums text-[11px] text-text-tertiary text-right whitespace-nowrap min-w-[100px]">
-              {ing.source_item_id ?? (
-                <span className="text-text-muted">—</span>
-              )}
+              {ing.source_item_id ?? <span className="text-text-muted">—</span>}
             </td>
           </tr>
         ))}
@@ -197,7 +207,10 @@ function formatDate(dateStr: string): string {
 }
 
 function computeTotal(lineItems: LineItem[]): number {
-  return lineItems.reduce((sum, item) => sum + (item.ingredient_cost_per_unit ?? 0), 0)
+  return lineItems.reduce(
+    (sum, item) => sum + (item.ingredient_cost_per_unit ?? 0),
+    0
+  )
 }
 
 /* ─── SVG Icons ────────────────────────────────────────────────────────────── */
@@ -246,7 +259,9 @@ function DownloadIcon() {
 /* ─── Export ───────────────────────────────────────────────────────────────── */
 
 function exportQuote(quote: Quote): void {
-  const blob = new Blob([JSON.stringify(quote, null, 2)], { type: 'application/json' })
+  const blob = new Blob([JSON.stringify(quote, null, 2)], {
+    type: 'application/json',
+  })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -259,14 +274,20 @@ function exportQuote(quote: Quote): void {
 
 export default function PassView() {
   const { quoteId } = useParams<{ quoteId: string }>()
-  const { data: quote, isLoading, error } = useQuoteResult(quoteId ?? '', !!quoteId)
+  const {
+    data: quote,
+    isLoading,
+    error,
+  } = useQuoteResult(quoteId ?? '', !!quoteId)
 
   /* ── Loading ── */
   if (isLoading) {
     return (
       <div className="min-h-screen bg-canvas px-8 pt-12 pb-20">
         <div className="max-w-[900px] mx-auto">
-          <p className="text-center py-16 text-text-tertiary text-base">Loading quote…</p>
+          <p className="text-center py-16 text-text-tertiary text-base">
+            Loading quote…
+          </p>
         </div>
       </div>
     )
@@ -290,7 +311,9 @@ export default function PassView() {
     return (
       <div className="min-h-screen bg-canvas px-8 pt-12 pb-20">
         <div className="max-w-[900px] mx-auto">
-          <p className="text-center py-16 text-text-tertiary text-base">No quote available.</p>
+          <p className="text-center py-16 text-text-tertiary text-base">
+            No quote available.
+          </p>
         </div>
       </div>
     )
@@ -307,7 +330,6 @@ export default function PassView() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-
         {/* ── Back navigation ── */}
         <Link
           to="/"
@@ -330,7 +352,9 @@ export default function PassView() {
               {quote.date && (
                 <>
                   <span>{formatDate(quote.date)}</span>
-                  {quote.venue && <span className="text-text-muted select-none"> — </span>}
+                  {quote.venue && (
+                    <span className="text-text-muted select-none"> — </span>
+                  )}
                 </>
               )}
               {quote.venue && <span>{quote.venue}</span>}
@@ -340,7 +364,9 @@ export default function PassView() {
 
             <div className="flex items-center justify-between pt-5 flex-wrap gap-4">
               <p className="text-base text-text-secondary">
-                <strong className="font-semibold text-text-primary">{lineItems.length}</strong>{' '}
+                <strong className="font-semibold text-text-primary">
+                  {lineItems.length}
+                </strong>{' '}
                 {lineItems.length === 1 ? 'menu item' : 'menu items'}
               </p>
 
@@ -368,7 +394,11 @@ export default function PassView() {
                 Line Items
               </p>
               {lineItems.map((item, idx) => (
-                <LineItemCard key={item.item_name ?? idx} item={item} idx={idx} />
+                <LineItemCard
+                  key={item.item_name ?? idx}
+                  item={item}
+                  idx={idx}
+                />
               ))}
             </div>
           )}
@@ -386,7 +416,6 @@ export default function PassView() {
             Export JSON
           </Button>
         </div>
-
       </motion.div>
     </main>
   )

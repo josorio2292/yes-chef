@@ -32,7 +32,8 @@ export function useQuoteStatus(quoteId: string, enabled = true) {
     enabled,
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      if (status === 'completed' || status === 'completed_with_errors') return false
+      if (status === 'completed' || status === 'completed_with_errors')
+        return false
       return 3000
     },
   })

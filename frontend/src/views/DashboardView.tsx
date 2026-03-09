@@ -17,13 +17,22 @@ function formatRelativeDate(iso: string): string {
   if (diffDays === 0) return 'Today'
   if (diffDays === 1) return 'Yesterday'
   if (diffDays < 7) return `${diffDays} days ago`
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? 's' : ''} ago`
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  if (diffDays < 30)
+    return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? 's' : ''} ago`
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
 function formatEventDate(iso: string): string {
   const date = new Date(iso)
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
 function quoteDestination(quote: QuoteSummary): string {
@@ -65,7 +74,9 @@ function StatusBadge({ status }: { status: string }) {
   }
 
   return (
-    <Badge className={`text-[11px] font-medium tracking-[0.04em] ${config.className}`}>
+    <Badge
+      className={`text-[11px] font-medium tracking-[0.04em] ${config.className}`}
+    >
       {config.label}
     </Badge>
   )
@@ -203,7 +214,6 @@ export default function DashboardView() {
   return (
     <div className="min-h-screen bg-canvas px-8 pt-12 pb-20">
       <div className="max-w-[1200px] mx-auto">
-
         {/* ── Header ── */}
         <motion.div
           className="flex items-start justify-between mb-10"
@@ -229,9 +239,7 @@ export default function DashboardView() {
         {/* ── Content ── */}
         {isLoading && <LoadingState />}
 
-        {error && !isLoading && (
-          <ErrorState refetch={refetch} />
-        )}
+        {error && !isLoading && <ErrorState refetch={refetch} />}
 
         {!isLoading && !error && quotes && quotes.length === 0 && (
           <EmptyState />
@@ -249,7 +257,6 @@ export default function DashboardView() {
             ))}
           </motion.div>
         )}
-
       </div>
     </div>
   )

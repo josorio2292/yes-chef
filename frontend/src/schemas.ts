@@ -13,10 +13,12 @@ export const menuSpecSchema = z.object({
   venue: z.string().nullable().optional(),
   guest_count_estimate: z.number().positive().nullable().optional(),
   notes: z.string().nullable().optional(),
-  categories: z.record(z.string(), z.array(z.unknown())).refine(
-    (cats) => Object.keys(cats).length > 0,
-    'At least one category with items is required',
-  ),
+  categories: z
+    .record(z.string(), z.array(z.unknown()))
+    .refine(
+      (cats) => Object.keys(cats).length > 0,
+      'At least one category with items is required'
+    ),
 })
 
 export const quoteSubmitResponseSchema = z.object({

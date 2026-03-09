@@ -3,7 +3,13 @@ import { useNavigate, Link } from 'react-router-dom'
 import { motion } from 'motion/react'
 import { menuSpecSchema } from '../schemas'
 import { useSubmitQuote } from '../api'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -30,7 +36,11 @@ function UploadIcon() {
       strokeWidth="1.5"
       className="w-3.5 h-3.5 shrink-0"
     >
-      <path d="M8 11V3M5 6l3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M8 11V3M5 6l3-3 3 3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <path d="M3 13h10" strokeLinecap="round" />
     </svg>
   )
@@ -40,8 +50,7 @@ function UploadIcon() {
 
 function parseCategorySummary(json: unknown): ParseSummary[] {
   if (typeof json !== 'object' || json === null) return []
-  const categories =
-    (json as Record<string, unknown>)['categories'] ?? json
+  const categories = (json as Record<string, unknown>)['categories'] ?? json
   if (typeof categories !== 'object' || categories === null) return []
   return Object.entries(categories as Record<string, unknown>)
     .map(([cat, items]) => ({
@@ -167,7 +176,8 @@ export default function SubmitView() {
       const data = await submitQuote.mutateAsync(validation.data)
       navigate(`/kitchen/${data.quote_id}`)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Something went wrong.'
+      const message =
+        err instanceof Error ? err.message : 'Something went wrong.'
       setSubmitError(message)
     }
   }
@@ -205,7 +215,6 @@ export default function SubmitView() {
 
           <CardContent className="px-12 pb-12">
             <form onSubmit={handleSubmit} noValidate className="space-y-8">
-
               {/* ── Event Details ────────────────────────────── */}
               <section>
                 <div className="flex items-center gap-3 mb-6">
@@ -234,7 +243,9 @@ export default function SubmitView() {
                       className="bg-inset border-border-default text-text-primary placeholder:text-text-muted text-[15px]"
                     />
                     {fieldErrors['event'] && (
-                      <span className="text-error-text text-sm">{fieldErrors['event']}</span>
+                      <span className="text-error-text text-sm">
+                        {fieldErrors['event']}
+                      </span>
                     )}
                   </div>
 
@@ -340,7 +351,9 @@ export default function SubmitView() {
                     <UploadIcon />
                     Upload .json
                   </Button>
-                  <span className="text-xs text-text-muted">or paste JSON below</span>
+                  <span className="text-xs text-text-muted">
+                    or paste JSON below
+                  </span>
                 </div>
 
                 <input
@@ -355,8 +368,8 @@ export default function SubmitView() {
                 {parseSummary.length > 0 && (
                   <div className="bg-copper-subtle border border-border-accent rounded-md p-4 mb-4">
                     <p className="text-xs font-semibold tracking-wide text-copper mb-2.5">
-                      {parseSummary.reduce((sum, s) => sum + s.count, 0)} items across{' '}
-                      {parseSummary.length}{' '}
+                      {parseSummary.reduce((sum, s) => sum + s.count, 0)} items
+                      across {parseSummary.length}{' '}
                       {parseSummary.length === 1 ? 'category' : 'categories'}
                     </p>
                     <ul className={cn('flex flex-wrap gap-1.5 list-none')}>
@@ -367,7 +380,9 @@ export default function SubmitView() {
                             className="border-border-accent text-copper italic"
                           >
                             <span className="italic">{s.category}</span>{' '}
-                            <span className="text-copper/70 not-italic">({s.count})</span>
+                            <span className="text-copper/70 not-italic">
+                              ({s.count})
+                            </span>
                           </Badge>
                         </li>
                       ))}
@@ -416,7 +431,6 @@ export default function SubmitView() {
                   {submitting ? 'Sending to kitchen…' : 'Start Quote'}
                 </Button>
               </div>
-
             </form>
           </CardContent>
         </Card>

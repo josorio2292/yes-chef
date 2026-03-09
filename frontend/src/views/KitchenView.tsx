@@ -10,7 +10,13 @@ import { cn } from '@/lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type ItemStatus = 'pending' | 'decomposing' | 'decomposed' | 'resolving' | 'completed' | 'failed'
+type ItemStatus =
+  | 'pending'
+  | 'decomposing'
+  | 'decomposed'
+  | 'resolving'
+  | 'completed'
+  | 'failed'
 
 interface JobItem {
   item_name: string
@@ -27,18 +33,25 @@ function cardStateClasses(item: JobItem): string {
     item.status === 'decomposing' ||
     item.status === 'decomposed' ||
     item.status === 'resolving'
-  ) return 'border-l-copper'
+  )
+    return 'border-l-copper'
   return 'border-l-border-default'
 }
 
 function stationLabel(item: JobItem): string {
   switch (item.status) {
-    case 'decomposing': return 'Prep — decomposing'
-    case 'decomposed':  return 'Prep — decomposed'
-    case 'resolving':   return 'Match — resolving'
-    case 'completed':   return 'Done'
-    case 'failed':      return "86'd"
-    default:            return 'Waiting'
+    case 'decomposing':
+      return 'Prep — decomposing'
+    case 'decomposed':
+      return 'Prep — decomposed'
+    case 'resolving':
+      return 'Match — resolving'
+    case 'completed':
+      return 'Done'
+    case 'failed':
+      return "86'd"
+    default:
+      return 'Waiting'
   }
 }
 
@@ -49,15 +62,19 @@ function stationLabelColor(item: JobItem): string {
     item.status === 'decomposing' ||
     item.status === 'decomposed' ||
     item.status === 'resolving'
-  ) return 'text-copper font-medium'
+  )
+    return 'text-copper font-medium'
   return 'text-text-tertiary'
 }
 
 function inferCategory(name: string): string {
   const n = name.toLowerCase()
-  if (/soup|salad|bite|spring|bruschetta|cocktail shrimp|mushroom/.test(n)) return 'Appetizer'
-  if (/cake|tart|mousse|crème|panna|sorbet|chocolate|dessert/.test(n)) return 'Dessert'
-  if (/margarita|mojito|sangria|punch|cocktail|spritz/.test(n)) return 'Cocktail'
+  if (/soup|salad|bite|spring|bruschetta|cocktail shrimp|mushroom/.test(n))
+    return 'Appetizer'
+  if (/cake|tart|mousse|crème|panna|sorbet|chocolate|dessert/.test(n))
+    return 'Dessert'
+  if (/margarita|mojito|sangria|punch|cocktail|spritz/.test(n))
+    return 'Cocktail'
   return 'Main'
 }
 
@@ -119,7 +136,7 @@ function TicketCard({ item, index }: { item: JobItem; index: number }) {
         className={cn(
           'bg-surface-raised border-border-subtle border-l-[4px] shadow-sm p-0 w-[230px] min-w-[210px] transition-all duration-200 gap-0',
           borderColor,
-          isProcessing && 'animate-pulse-copper shadow-glow',
+          isProcessing && 'animate-pulse-copper shadow-glow'
         )}
       >
         <CardContent className="p-5">
@@ -127,7 +144,9 @@ function TicketCard({ item, index }: { item: JobItem; index: number }) {
             <span
               className={cn(
                 'text-[16px] font-medium leading-tight flex-1',
-                item.status === 'pending' ? 'text-text-muted' : 'text-text-primary',
+                item.status === 'pending'
+                  ? 'text-text-muted'
+                  : 'text-text-primary'
               )}
             >
               {item.item_name}
@@ -139,9 +158,7 @@ function TicketCard({ item, index }: { item: JobItem; index: number }) {
               {category}
             </Badge>
           </div>
-          <div className={cn('text-[13px] mt-1', labelColor)}>
-            {station}
-          </div>
+          <div className={cn('text-[13px] mt-1', labelColor)}>{station}</div>
         </CardContent>
       </Card>
     </motion.div>
@@ -168,11 +185,15 @@ function Station({ label, icon, items, hidden }: StationProps) {
       transition={{ duration: 0.4 }}
     >
       <div className="flex items-center gap-2">
-        <span className="text-[11px] text-text-tertiary leading-none">{icon}</span>
+        <span className="text-[11px] text-text-tertiary leading-none">
+          {icon}
+        </span>
         <span className="text-[11px] font-medium tracking-[0.12em] uppercase text-text-tertiary">
           {label}
           {items.length > 0 && (
-            <span className="font-normal text-text-muted ml-1">({items.length})</span>
+            <span className="font-normal text-text-muted ml-1">
+              ({items.length})
+            </span>
           )}
         </span>
       </div>
@@ -196,16 +217,26 @@ interface CounterProps {
   glow?: boolean
 }
 
-function Counter({ value, label, valueColor = 'text-text-primary', glow = false }: CounterProps) {
+function Counter({
+  value,
+  label,
+  valueColor = 'text-text-primary',
+  glow = false,
+}: CounterProps) {
   return (
     <Card
       className={cn(
         'bg-surface-raised border-border-subtle shadow-sm gap-0 min-w-[100px] p-0',
-        glow && 'shadow-glow',
+        glow && 'shadow-glow'
       )}
     >
       <CardContent className="flex flex-col items-start gap-1 px-5 py-4">
-        <span className={cn('font-mono text-[40px] font-medium tabular-nums leading-none', valueColor)}>
+        <span
+          className={cn(
+            'font-mono text-[40px] font-medium tabular-nums leading-none',
+            valueColor
+          )}
+        >
           {value}
         </span>
         <span className="text-[11px] font-medium tracking-[0.12em] uppercase text-text-tertiary leading-none mt-1">
@@ -223,37 +254,50 @@ export default function KitchenView() {
   const navigate = useNavigate()
 
   const [job, setJob] = useState<QuoteStatus | null>(null)
-  const [connStatus, setConnStatus] = useState<'connecting' | 'live' | 'error' | 'closed'>('connecting')
+  const [connStatus, setConnStatus] = useState<
+    'connecting' | 'live' | 'error' | 'closed'
+  >('connecting')
   const [jobDone, setJobDone] = useState(false)
 
   const sseRef = useRef<EventSource | null>(null)
 
   // TanStack Query polling — used as initial fetch + fallback
-  const { data: queryData } = useQuoteStatus(quoteId ?? '', !!quoteId && quoteId !== 'demo')
+  const { data: queryData } = useQuoteStatus(
+    quoteId ?? '',
+    !!quoteId && quoteId !== 'demo'
+  )
 
   // Merge query data into local state (SSE takes priority for real-time updates)
   useEffect(() => {
     if (!queryData) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setJob(queryData)
-    if (queryData.status === 'completed' || queryData.status === 'completed_with_errors') {
+    if (
+      queryData.status === 'completed' ||
+      queryData.status === 'completed_with_errors'
+    ) {
       setJobDone(true)
     }
   }, [queryData])
 
   // ── Merge SSE item update into job state ───────────────────────────────────
-  const applyItemUpdate = useCallback((itemName: string, patch: Partial<JobItem>) => {
-    setJob((prev) => {
-      if (!prev) return prev
-      const items = prev.items.map((it) =>
-        it.item_name === itemName ? { ...it, ...patch } : it,
-      ) as JobItem[]
-      return { ...prev, ...recalcCounters(items), items }
-    })
-  }, [])
+  const applyItemUpdate = useCallback(
+    (itemName: string, patch: Partial<JobItem>) => {
+      setJob((prev) => {
+        if (!prev) return prev
+        const items = prev.items.map((it) =>
+          it.item_name === itemName ? { ...it, ...patch } : it
+        ) as JobItem[]
+        return { ...prev, ...recalcCounters(items), items }
+      })
+    },
+    []
+  )
 
   // ── SSE ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!quoteId || quoteId === 'demo') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setJob({
         quote_id: 'demo',
         status: 'running',
@@ -291,7 +335,10 @@ export default function KitchenView() {
     es.addEventListener('item_completed', (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data)
-        applyItemUpdate(payload.item_name, { status: 'completed', step: 'completed' })
+        applyItemUpdate(payload.item_name, {
+          status: 'completed',
+          step: 'completed',
+        })
       } catch {
         // ignore
       }
@@ -321,15 +368,18 @@ export default function KitchenView() {
   const items = (job?.items ?? []) as JobItem[]
   const { pending, prep, match, done, eightySixed } = groupByStation(items)
 
-  const totalItems     = job?.total_items ?? 0
+  const totalItems = job?.total_items ?? 0
   const completedItems = job?.completed_items ?? done.length
-  const failedItems    = job?.failed_items ?? eightySixed.length
-  const inProgress     = prep.length + match.length
+  const failedItems = job?.failed_items ?? eightySixed.length
+  const inProgress = prep.length + match.length
 
   // ── Conn dot color ─────────────────────────────────────────────────────────
-  const connDotColor = connStatus === 'live' ? 'bg-success'
-    : connStatus === 'error' ? 'bg-error'
-    : 'bg-text-muted'
+  const connDotColor =
+    connStatus === 'live'
+      ? 'bg-success'
+      : connStatus === 'error'
+        ? 'bg-error'
+        : 'bg-text-muted'
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -353,10 +403,27 @@ export default function KitchenView() {
           </h1>
 
           <div className="flex gap-4 flex-wrap">
-            <Counter value={totalItems}     label="Total items"  valueColor="text-text-primary"                              />
-            <Counter value={inProgress}     label="In progress"  valueColor="text-copper"        glow={inProgress > 0}       />
-            <Counter value={completedItems} label="Completed"    valueColor="text-success"                                   />
-            <Counter value={failedItems}    label="Failed"       valueColor="text-error"                                     />
+            <Counter
+              value={totalItems}
+              label="Total items"
+              valueColor="text-text-primary"
+            />
+            <Counter
+              value={inProgress}
+              label="In progress"
+              valueColor="text-copper"
+              glow={inProgress > 0}
+            />
+            <Counter
+              value={completedItems}
+              label="Completed"
+              valueColor="text-success"
+            />
+            <Counter
+              value={failedItems}
+              label="Failed"
+              valueColor="text-error"
+            />
           </div>
 
           <AnimatePresence>
@@ -404,12 +471,36 @@ export default function KitchenView() {
               label="Prep"
               icon="◆"
               items={prep}
-              hidden={prep.length === 0 && pending.length === 0 && done.length + eightySixed.length === items.length}
+              hidden={
+                prep.length === 0 &&
+                pending.length === 0 &&
+                done.length + eightySixed.length === items.length
+              }
             />
-            <Station label="Pending" icon="◇" items={pending}      hidden={pending.length === 0}      />
-            <Station label="Match"   icon="◈" items={match}        hidden={match.length === 0}        />
-            <Station label="Done"    icon="✓" items={done}         hidden={done.length === 0}         />
-            <Station label="86'd"    icon="✕" items={eightySixed}  hidden={eightySixed.length === 0}  />
+            <Station
+              label="Pending"
+              icon="◇"
+              items={pending}
+              hidden={pending.length === 0}
+            />
+            <Station
+              label="Match"
+              icon="◈"
+              items={match}
+              hidden={match.length === 0}
+            />
+            <Station
+              label="Done"
+              icon="✓"
+              items={done}
+              hidden={done.length === 0}
+            />
+            <Station
+              label="86'd"
+              icon="✕"
+              items={eightySixed}
+              hidden={eightySixed.length === 0}
+            />
           </>
         )}
       </motion.main>
@@ -421,13 +512,13 @@ export default function KitchenView() {
             className={cn(
               'w-1.5 h-1.5 rounded-full shrink-0',
               connDotColor,
-              connStatus === 'live' && 'animate-breathe',
+              connStatus === 'live' && 'animate-breathe'
             )}
           />
-          {connStatus === 'live'       && 'Live'}
+          {connStatus === 'live' && 'Live'}
           {connStatus === 'connecting' && 'Connecting…'}
-          {connStatus === 'error'      && 'Polling'}
-          {connStatus === 'closed'     && 'Done'}
+          {connStatus === 'error' && 'Polling'}
+          {connStatus === 'closed' && 'Done'}
         </div>
       )}
     </div>
