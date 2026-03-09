@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { quoteStatusSchema } from './schemas'
 import { quoteSubmitResponseSchema } from './schemas'
 import { quoteSchema } from './schemas'
+import { quoteSummaryListSchema } from './schemas'
 import type { MenuSpec } from './schemas'
 
 const BASE = '/api'
@@ -47,4 +48,16 @@ export function useQuoteResult(quoteId: string, enabled = true) {
     },
     enabled,
   })
+}
+
+export function useQuotes() {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['quotes'],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/quotes`)
+      if (!res.ok) throw new Error(`Quotes fetch failed: ${res.status}`)
+      return quoteSummaryListSchema.parse(await res.json())
+    },
+  })
+  return { data, isLoading, error, refetch }
 }

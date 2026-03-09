@@ -63,9 +63,25 @@ export const quoteSchema = z.object({
   line_items: z.array(lineItemSchema),
 })
 
+export const quoteSummarySchema = z.object({
+  quote_id: z.string(),
+  event: z.string(),
+  date: z.string().nullable(),
+  venue: z.string().nullable(),
+  guest_count_estimate: z.number().nullable(),
+  status: z.string(),
+  total_items: z.number(),
+  completed_items: z.number(),
+  failed_items: z.number(),
+  created_at: z.string(),
+})
+
+export const quoteSummaryListSchema = z.array(quoteSummarySchema)
+
 export type MenuSpec = z.infer<typeof menuSpecSchema>
 export type QuoteSubmitResponse = z.infer<typeof quoteSubmitResponseSchema>
 export type QuoteStatus = z.infer<typeof quoteStatusSchema>
 export type Quote = z.infer<typeof quoteSchema>
 export type LineItem = z.infer<typeof lineItemSchema>
 export type Ingredient = z.infer<typeof ingredientSchema>
+export type QuoteSummary = z.infer<typeof quoteSummarySchema>

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { motion } from 'motion/react'
 import { menuSpecSchema } from '../schemas'
 import { useSubmitQuote } from '../api'
@@ -184,6 +184,15 @@ export default function SubmitView() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
       >
+        <div className="mb-5">
+          <Link
+            to="/"
+            className="text-[13px] text-text-tertiary hover:text-copper transition-colors duration-150 tracking-wide"
+          >
+            ← All Quotes
+          </Link>
+        </div>
+
         <Card className="bg-surface-raised border-border-subtle shadow-lg border-t-2 border-t-copper/60">
           <CardHeader className="pb-4 pt-12 px-12">
             <CardTitle className="font-display text-[42px] font-semibold tracking-[-0.03em] text-text-primary mb-1.5">

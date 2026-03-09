@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import { useQuoteStatus } from '../api'
 import type { QuoteStatus } from '../schemas'
@@ -341,6 +341,13 @@ export default function KitchenView() {
         transition={{ duration: 0.5 }}
       >
         <div className="max-w-[1200px] mx-auto px-8 pt-12 pb-8">
+          <Link
+            to="/"
+            className="inline-block text-[13px] text-text-tertiary hover:text-copper transition-colors duration-150 tracking-wide mb-6"
+          >
+            ← All Quotes
+          </Link>
+
           <h1 className="font-display text-[42px] font-semibold tracking-[-0.03em] text-text-primary mb-8">
             Kitchen
           </h1>

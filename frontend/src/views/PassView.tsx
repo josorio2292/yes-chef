@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import type { KeyboardEvent, SVGProps } from 'react'
 import { motion } from 'motion/react'
 import { useQuoteResult } from '../api'
@@ -307,6 +307,14 @@ export default function PassView() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
+
+        {/* ── Back navigation ── */}
+        <Link
+          to="/"
+          className="inline-block text-[13px] text-text-tertiary hover:text-copper transition-colors duration-150 tracking-wide"
+        >
+          ← All Quotes
+        </Link>
 
         {/* ── Summary Header ── */}
         <Card
