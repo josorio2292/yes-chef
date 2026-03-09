@@ -16,8 +16,8 @@ flowchart TB
         MS[Menu Specification JSON]
     end
 
-    subgraph JobCreation["Job Creation (deterministic)"]
-        PARSE[Parse menu spec] --> CREATE[Create job + work items in Postgres]
+    subgraph QuoteCreation["Quote Creation (deterministic)"]
+        PARSE[Parse menu spec] --> CREATE[Create quote + menu items in Postgres]
     end
 
     subgraph Orchestrator["Async Orchestrator"]
@@ -64,8 +64,8 @@ flowchart TB
     end
 
     subgraph Persistence["Postgres"]
-        JOBS[(Jobs)]
-        ITEMS[(Work Items)]
+        JOBS[(Quotes)]
+        ITEMS[(Menu Items)]
         ICACHE[("Cache\n(global)")]
         CAT[(catalog_items)]
     end
@@ -100,7 +100,7 @@ flowchart TB
 
 | Component | AI? | Guardrails |
 |-----------|-----|------------|
-| Job creation | No | JSON schema validation |
+| Quote creation | No | JSON schema validation |
 | Exa recipe search | No | Programmatic query template |
 | Ingredient extraction | **Yes** (LLM) | Structured output (Pydantic, `min_length=1`), temperature 0, grounded in recipe text only |
 | Quantity estimation | **Yes** (LLM) | Structured output, derived from recipe serving sizes |
@@ -126,17 +126,17 @@ flowchart TB
 
 ## Behaviors
 
-### Job Lifecycle
+### Quote Lifecycle
 
-- **JobSubmission:**
+- **QuoteSubmission:**
   - Given the system is running and the catalog service is available,
   - When a caller submits a valid menu specification,
-  - Then the system creates a job with a unique ID, one work item per menu item (each "pending"), and returns the job ID.
+  - Then the system creates a quote with a unique ID, one menu item per menu item (each "pending"), and returns the quote ID.
 
-- **JobCompletion:**
-  - Given a job has items being processed,
+- **QuoteCompletion:**
+  - Given a quote has items being processed,
   - When the last item finishes (completed or failed),
-  - Then the system assembles the final quote from successfully completed items and marks the job as "completed".
+  - Then the system assembles the final quote from successfully completed items and marks the quote as "completed".
 
 ### Catalog Layer
 
@@ -265,8 +265,8 @@ Each menu item moves through two steps with a checkpoint after each.
 
 ### Observability
 
-- **ProgressReporting:** Job status includes per-item step information.
-- **RealTimeUpdates:** SSE events for step transitions, item completion, item failure, and job completion. Frontend consumes these via native `EventSource` API.
+- **ProgressReporting:** Quote status includes per-item step information.
+- **RealTimeUpdates:** SSE events for step transitions, item completion, item failure, and quote completion. Frontend consumes these via native `EventSource` API.
 - **QuoteRetrieval:** Final quote as JSON conforming to `quote_schema.json`.
 
 ### Frontend Views
@@ -289,7 +289,7 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 
 - **RateLimiting:** System pauses and waits. No items marked failed. If killed during the wait, standard resumability applies.
 
-- **PartialQuote:** Job completes with failed items → quote contains only successful items. Status reflects failure count.
+- **PartialQuote:** Quote completes with failed items → quote contains only successful items. Status reflects failure count.
 
 ## Contracts
 
@@ -367,7 +367,7 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 - No prices. Entries invalidated when `get_price()` fails on a cached item.
 
 **Checkpoint State:**
-- job_id, item_name, category
+- quote_id, item_name, category
 - status: pending | decomposing | decomposed | resolving | completed | failed
 - step_data: intermediate result for last completed step
 - error: str | None
@@ -379,8 +379,8 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
   - ingredients: list per ingredient: name, quantity, unit_cost, source, source_item_id
   - ingredient_cost_per_unit: float (sum of non-null unit_costs)
 
-**Job Status:**
-- job_id, status, total_items, completed_items, failed_items
+**Quote Status:**
+- quote_id, status, total_items, completed_items, failed_items
 - items: list of (item_name, step, status)
 
 **Curl Test Case (YAML — `tests/curl/*.yml`):**
@@ -391,10 +391,10 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 - depends_on (optional): name of another test whose response values are referenced via `${prev.field}` interpolation
 
 **SSE Events:**
-- item_step_change: job_id, item_name, status, step, timestamp
-- item_completed: job_id, item_name, data, timestamp
-- item_failed: job_id, item_name, error, timestamp
-- job_completed: job_id, timestamp
+- item_step_change: quote_id, item_name, status, step, timestamp
+- item_completed: quote_id, item_name, data, timestamp
+- item_failed: quote_id, item_name, error, timestamp
+- quote_completed: quote_id, timestamp
 
 ## Constraints
 
@@ -561,7 +561,7 @@ All identified risks have been derisked:
 
 ### Task 6: Wire the orchestrator (sequential pipeline + checkpointing)
 
-- **Spec behaviors satisfied:** JobSubmission, JobCompletion, Checkpointing, Resumability, ItemIsolation, ItemLevelFailure, PartialQuote
+- **Spec behaviors satisfied:** QuoteSubmission, QuoteCompletion, Checkpointing, Resumability, ItemIsolation, ItemLevelFailure, PartialQuote
 - **Acceptance condition:** Submit a menu spec → orchestrator creates a job, processes each item through decompose → resolve, assembles a quote. A test with 3 menu items verifies all reach "completed." A test with one failing item verifies others still complete and the quote contains only successful items. A resume test interrupts mid-processing and verifies: completed items are skipped, decomposed items resume at resolve, resolving items restart resolve (ingredients cached before interruption hit the fast path), pending items restart decomposition.
 - **Depends on:** Tasks 4, 5
 
@@ -574,27 +574,27 @@ All identified risks have been derisked:
 ### Task 8: Build minimal API layer (submit, status, quote)
 
 - **Spec behaviors satisfied:** ProgressReporting, QuoteRetrieval, SchemaValidation
-- **Acceptance condition:** POST /jobs with a menu spec returns a job ID. GET /jobs/{id} returns job status with per-item step info. GET /jobs/{id}/quote returns the final quote conforming to quote_schema.json. Pytest tests cover request validation and response shapes. Curl test YAML files (`tests/curl/`) define the full API contract:
-  - `submit_job.yml` — POST /jobs with valid menu spec → 201, job_id returned
-  - `submit_invalid.yml` — POST /jobs with empty body → 422
-  - `job_status.yml` — GET /jobs/{id} → 200, status + items array
-  - `job_not_found.yml` — GET /jobs/{unknown} → 404
-  - `get_quote.yml` — GET /jobs/{id}/quote after completion → 200, validates against quote_schema.json
-  - `quote_not_ready.yml` — GET /jobs/{id}/quote while processing → 409 or appropriate status
+- **Acceptance condition:** POST /quotes with a menu spec returns a quote ID. GET /quotes/{id} returns quote status with per-item step info. GET /quotes/{id}/result returns the final quote conforming to quote_schema.json. Pytest tests cover request validation and response shapes. Curl test YAML files (`tests/curl/`) define the full API contract:
+  - `submit_quote.yml` — POST /quotes with valid menu spec → 201, quote_id returned
+  - `submit_invalid.yml` — POST /quotes with empty body → 422
+  - `quote_status.yml` — GET /quotes/{id} → 200, status + items array
+  - `quote_not_found.yml` — GET /quotes/{unknown} → 404
+  - `get_result.yml` — GET /quotes/{id}/result after completion → 200, validates against quote_schema.json
+  - `result_not_ready.yml` — GET /quotes/{id}/result while processing → 409 or appropriate status
   A test runner script executes all YAML files against the running API and reports pass/fail.
 - **Depends on:** Task 6
 
 ### Task 9: Add SSE streaming
 
 - **Spec behaviors satisfied:** RealTimeUpdates
-- **Acceptance condition:** GET /jobs/{id}/stream returns an SSE stream. Events fire for item_step_change, item_completed, item_failed, and job_completed. A pytest test connects to the stream, submits a job, and verifies events arrive in order. Curl test YAML file:
-  - `sse_stream.yml` — GET /jobs/{id}/stream → 200, Content-Type: text/event-stream, receives at least one event
+- **Acceptance condition:** GET /quotes/{id}/stream returns an SSE stream. Events fire for item_step_change, item_completed, item_failed, and quote_completed. A pytest test connects to the stream, submits a quote, and verifies events arrive in order. Curl test YAML file:
+  - `sse_stream.yml` — GET /quotes/{id}/stream → 200, Content-Type: text/event-stream, receives at least one event
 - **Depends on:** Task 8
 
 ### Task 10: Build the frontend (Submit view)
 
 - **Spec behaviors satisfied:** Submit View
-- **Acceptance condition:** A React page with a form for menu spec input (JSON paste or upload) and event details. Submitting calls POST /jobs and navigates to the Kitchen view. Styled per `.interface-design/system.md` — copper CTA, butcher paper canvas, parchment surfaces.
+- **Acceptance condition:** A React page with a form for menu spec input (JSON paste or upload) and event details. Submitting calls POST /quotes and navigates to the Kitchen view. Styled per `.interface-design/system.md` — copper CTA, butcher paper canvas, parchment surfaces.
 - **Depends on:** Task 8
 
 ### Task 11: Build the frontend (Kitchen view)

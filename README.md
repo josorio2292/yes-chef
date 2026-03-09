@@ -109,7 +109,7 @@ Four views wired to the quote lifecycle:
 yes-chef-impl/
 ├── src/yes_chef/
 │   ├── api/                    # FastAPI app, endpoints, SSE streaming
-│   ├── orchestrator/           # Job lifecycle, concurrency, quote assembly
+│   ├── orchestrator/           # Quote lifecycle, concurrency, quote assembly
 │   ├── decomposition/          # Exa recipe search + LLM ingredient extraction
 │   ├── resolution/             # Cache → pgvector search → LLM catalog matching
 │   ├── catalog/                # Embedding search, pricing, Sysco CSV ingestion
