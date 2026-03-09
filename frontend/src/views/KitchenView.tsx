@@ -106,17 +106,17 @@ function TicketCard({ item }: { item: JobItem }) {
 
   return (
     <article
-      className={`bg-surface-raised border border-border-subtle border-l-[3px] ${borderColor} rounded-card shadow-sm p-4 w-[220px] min-w-[200px] transition-all duration-200 ${isProcessing ? 'animate-pulse-copper' : ''}`}
+      className={`bg-surface-raised border border-border-subtle border-l-[3px] ${borderColor} rounded-[8px] shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.06)] p-4 w-[220px] min-w-[200px] transition-all duration-200 ${isProcessing ? 'animate-pulse-copper' : ''}`}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
-        <span className={`text-base font-medium leading-tight flex-1 ${item.status === 'pending' ? 'text-text-muted' : 'text-text-primary'}`}>
+        <span className={`text-[16px] font-medium leading-tight flex-1 ${item.status === 'pending' ? 'text-text-muted' : 'text-text-primary'}`}>
           {item.item_name}
         </span>
-        <span className="text-xs font-medium tracking-wide text-text-secondary bg-surface border border-border-subtle rounded-badge px-2 py-0.5 whitespace-nowrap shrink-0">
+        <span className="text-[11px] font-medium tracking-wide text-text-secondary bg-surface px-2 py-0.5 rounded-[4px] whitespace-nowrap shrink-0">
           {category}
         </span>
       </div>
-      <div className={`text-xs tracking-wide mt-1 ${labelColor}`}>
+      <div className={`text-[13px] mt-1 ${labelColor}`}>
         {station}
       </div>
     </article>
@@ -138,18 +138,16 @@ function Station({ label, icon, items, hidden }: StationProps) {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <span className="text-sm text-text-tertiary">{icon}</span>
-        <span className="text-xs font-medium tracking-wide uppercase text-text-tertiary">
+        <span className="text-[13px] text-text-tertiary leading-none">{icon}</span>
+        <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary">
           {label}
+          {items.length > 0 && (
+            <span className="font-normal text-text-muted ml-1">({items.length})</span>
+          )}
         </span>
-        {items.length > 0 && (
-          <span className="text-[11px] tracking-wide text-text-muted ml-1">
-            ({items.length})
-          </span>
-        )}
       </div>
       {items.length > 0 && (
-        <div className="flex flex-wrap gap-4">
+        <div className="flex flex-wrap gap-3">
           {items.map((item) => (
             <TicketCard key={item.item_name} item={item} />
           ))}
@@ -169,11 +167,11 @@ interface CounterProps {
 
 function Counter({ value, label, valueColor = 'text-text-primary' }: CounterProps) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className={`text-[28px] font-semibold tracking-tight tabular-nums leading-none ${valueColor}`}>
+    <div className="flex flex-col items-start gap-1 bg-surface-raised border border-border-subtle rounded-[8px] px-4 py-3 min-w-[88px] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+      <span className={`text-[32px] font-semibold tabular-nums leading-none ${valueColor}`}>
         {value}
       </span>
-      <span className="text-xs font-medium tracking-wide uppercase text-text-tertiary">
+      <span className="text-[11px] font-medium tracking-[0.06em] uppercase text-text-tertiary leading-none mt-1">
         {label}
       </span>
     </div>
@@ -299,12 +297,13 @@ export default function KitchenView() {
   return (
     <div className="min-h-screen bg-canvas flex flex-col">
       {/* ── Header ── */}
-      <header className="bg-surface-raised border-b border-border-subtle px-8 py-6 shadow-sm">
-        <h1 className="text-[28px] font-semibold tracking-tight text-text-primary mb-6">
+      <header className="bg-surface-raised border-b border-border-subtle shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+        <div className="max-w-[1200px] mx-auto px-8 py-6">
+        <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-text-primary mb-6">
           Kitchen
         </h1>
 
-        <div className="flex gap-8 flex-wrap">
+        <div className="flex gap-3 flex-wrap">
           <Counter value={totalItems}     label="Total items"  valueColor="text-text-primary"  />
           <Counter value={inProgress}     label="In progress"  valueColor="text-copper"         />
           <Counter value={completedItems} label="Completed"    valueColor="text-success"        />
@@ -312,22 +311,23 @@ export default function KitchenView() {
         </div>
 
         {jobDone && (
-          <div className="mt-4 px-4 py-3 bg-success-subtle border border-success rounded-button flex items-center gap-4 text-sm font-medium text-success">
-            <span>✓ All items processed — quote is ready.</span>
+          <div className="mt-5 px-4 py-3 bg-success-subtle border border-success/20 rounded-[8px] flex items-center gap-4">
+            <span className="text-[14px] font-medium text-success flex-1">✓ All items processed — quote is ready.</span>
             <button
-              className="px-3 py-1.5 bg-success text-white border-none rounded-button text-sm font-medium cursor-pointer hover:opacity-90 transition-opacity"
+              className="px-3 py-1.5 bg-transparent border border-copper text-copper rounded-[6px] text-[13px] font-medium cursor-pointer hover:bg-copper-subtle transition-colors"
               onClick={() => navigate(`/pass/${jobId}`)}
             >
-              View Quote
+              View Quote →
             </button>
           </div>
         )}
+        </div>
       </header>
 
       {/* ── Ticket rail ── */}
-      <main className="flex-1 p-8 flex flex-col gap-8">
+      <main className="flex-1 px-8 py-8 flex flex-col gap-8 max-w-[1200px] w-full mx-auto self-start">
         {items.length === 0 ? (
-          <div className="flex items-center justify-center py-16 text-text-muted text-sm">
+          <div className="flex items-center justify-center py-20 text-[13px] text-text-muted">
             {jobId === 'demo'
               ? 'Submit a menu to start tracking progress.'
               : 'Loading items…'}
@@ -350,7 +350,7 @@ export default function KitchenView() {
 
       {/* ── Connection status indicator ── */}
       {jobId !== 'demo' && (
-        <div className="fixed bottom-4 right-4 text-[11px] tracking-wide px-2 py-1 rounded-badge border border-border-subtle bg-surface-raised text-text-muted flex items-center gap-1.5">
+        <div className="fixed bottom-4 right-4 text-[11px] font-medium tracking-[0.04em] px-2.5 py-1.5 rounded-[6px] border border-border-subtle bg-surface-raised shadow-[0_1px_3px_rgba(0,0,0,0.06)] text-text-tertiary flex items-center gap-1.5">
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${connDotColor}`} />
           {connStatus === 'live'       && 'Live'}
           {connStatus === 'connecting' && 'Connecting…'}
