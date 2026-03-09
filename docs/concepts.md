@@ -377,7 +377,7 @@ Query: "unsalted butter"  ─►  embed(query)  ─►  1536-dim vector
 - **Embedding model**: OpenAI text-embedding-3-small (1536 dimensions)
 - **Index type**: HNSW (Hierarchical Navigable Small World) — approximate nearest neighbor
 - **Index params**: m=16, ef_construction=64 (balanced recall vs build time)
-- **Search latency**: ~5-10ms for ~5K items
+- **Search latency**: ~5-10ms for ~565 items
 - **Why not exact search?**: HNSW is O(log n) vs O(n) for exact; matters at scale even if catalog is small now
 
 ### Data ingestion

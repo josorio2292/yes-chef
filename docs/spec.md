@@ -172,7 +172,7 @@ This prevents expensive LLM calls from being re-run after transient failures.
 
 **Embedding model:** OpenAI `text-embedding-3-small`, 1536 dimensions.
 
-**Index:** HNSW (pgvector) on the embedding column, cosine distance metric. Provides fast approximate nearest-neighbor search (~10ms for the current catalog size of ~5K items).
+**Index:** HNSW (pgvector) on the embedding column, cosine distance metric. Provides fast approximate nearest-neighbor search (~10ms for the current catalog size of ~565 items).
 
 **Key operations:**
 
@@ -258,7 +258,7 @@ This prevents expensive LLM calls from being re-run after transient failures.
 
 ## Frontend
 
-**Tech stack:** React 19 + TypeScript + Vite + Tailwind CSS 4 + shadcn/ui + Framer Motion
+**Tech stack:** React 19 + TypeScript + Vite + Tailwind CSS 4 + shadcn/ui + Motion
 
 **State management:** React Query for server state, local `useState` for UI state, `EventSource` for SSE.
 
@@ -307,7 +307,7 @@ Single server, prototype scope. Redis would add infrastructure complexity (anoth
 
 ### Why pgvector HNSW instead of a dedicated vector database?
 
-PostgreSQL already handles all relational data. pgvector keeps everything in one database, eliminating an entire infrastructure component. HNSW provides good recall at ~10ms search latency for the current catalog size (~5K items). A dedicated vector database (Pinecone, Weaviate, Qdrant) would only offer meaningful advantages at 100K+ items or with advanced filtering requirements.
+PostgreSQL already handles all relational data. pgvector keeps everything in one database, eliminating an entire infrastructure component. HNSW provides good recall at ~10ms search latency for the current catalog size (~565 items). A dedicated vector database (Pinecone, Weaviate, Qdrant) would only offer meaningful advantages at 100K+ items or with advanced filtering requirements.
 
 ### Why two LLM stages (decompose → resolve) instead of one?
 

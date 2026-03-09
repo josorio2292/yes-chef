@@ -274,8 +274,9 @@ Each menu item moves through two steps with a checkpoint after each.
 
 ### Frontend Views
 
-Three views mirror the kitchen workflow (design system: `.interface-design/system.md`):
+Four views mirror the kitchen workflow (design system: `.interface-design/system.md`):
 
+- **Dashboard View:** Lists all quotes with status badges; click to navigate to Kitchen or Pass.
 - **Submit View:** Clean form for menu spec input (JSON upload or paste) + event details. Single CTA: "Start Quote."
 - **Kitchen View:** Live progress — ticket cards representing menu items move through stations (Prep → Match → Done) as SSE events arrive. Live counters for total/in-progress/completed/failed.
 - **The Pass View:** Final quote review — summary header + expandable line items with ingredient tables. Source badges (Catalog / Estimated / 86'd) on each ingredient. Export as JSON.
@@ -474,7 +475,7 @@ Three views mirror the kitchen workflow (design system: `.interface-design/syste
 4. **Resolution engine** — Cache-hit fast path + PydanticAI matching agent with tools (search_catalog, get_price, update_cache). `IngredientMatch` uses `source_item_id`.
 5. **Orchestrator** — Sequential job runner with checkpointing, then concurrency.
 6. **API layer** — Minimal FastAPI: submit job, get status, get quote, SSE.
-7. **Frontend** — React with three views (Submit, Kitchen, The Pass) per `.interface-design/system.md`.
+7. **Frontend** — React with four views (Dashboard, Submit, Kitchen, The Pass) per `.interface-design/system.md`.
 
 ### Sequence of Changes
 

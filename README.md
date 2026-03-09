@@ -35,8 +35,14 @@ docker compose up -d --build
 ### Test
 
 ```bash
+# Backend
 uv run pytest tests/ -v
-cd frontend && npx tsc --noEmit
+
+# Frontend
+cd frontend
+pnpm run typecheck
+pnpm run lint
+pnpm run format:check
 ```
 
 ---
@@ -54,7 +60,7 @@ React SPA ←→ FastAPI ←→ Orchestrator ←→ [Decomposition Agent, Resolu
 - **Two-stage pipeline** — Decompose (Exa + LLM → ingredient list) then Resolve (cache + pgvector + LLM → catalog match + price). Stages are independent and individually checkpointed.
 - **Checkpoint resumability** — Each menu item persists its state (`pending → decomposing → decomposed → resolving → completed`) and intermediate results to a `step_data` JSON column. An interrupted quote resumes from the last checkpoint on restart — no work is lost. On startup, the server automatically detects any quotes left in `"processing"` status (e.g. from a prior crash) and resumes them as background tasks. DB errors during recovery are caught and logged so a bad quote never prevents the server from starting.
 - **Ingredient cache** — Resolved ingredients are cached in `ingredient_cache` keyed by normalized name. Subsequent quotes skip LLM calls entirely for already-resolved ingredients, accumulating learnings across the system's lifetime.
-- **pgvector HNSW** — Supplier catalog (~5K items) is embedded with `text-embedding-3-small` (1536d) and indexed with HNSW (`m=16, ef_construction=64`). Embedding happens once on first startup; searches are sub-millisecond cosine similarity lookups.
+- **pgvector HNSW** — Supplier catalog (~565 items) is embedded with `text-embedding-3-small` (1536d) and indexed with HNSW (`m=16, ef_construction=64`). Embedding happens once on first startup; searches are fast cosine similarity lookups.
 
 ---
 
@@ -121,6 +127,9 @@ yes-chef-impl/
 │   ├── components/             # Shared UI components
 │   ├── api.ts                  # React Query hooks
 │   └── schemas.ts              # Zod request/response schemas
+├── frontend/eslint.config.js
+├── frontend/.prettierrc.json
+├── frontend/.prettierignore
 ├── alembic/                    # Database migrations
 ├── tests/                      # pytest suite
 ├── data/
@@ -129,7 +138,7 @@ yes-chef-impl/
 │   └── quote_schema.json       # Output quote schema
 ├── docker-compose.yml
 ├── Dockerfile                  # API image (Python 3.12, uv)
-├── entrypoint.sh               # Runs migrations → catalog ingestion → uvicorn
+├── entrypoint.sh               # Runs migrations → uvicorn
 └── pyproject.toml
 ```
 
@@ -145,7 +154,7 @@ yes-chef-impl/
 | OpenAI `text-embedding-3-small` | React Query |
 | Exa API (recipe research) | Zod |
 | PostgreSQL 16 + pgvector | pnpm |
-| SQLAlchemy (async) + Alembic | |
+| SQLAlchemy (async) + Alembic | ESLint, Prettier |
 | Docker Compose | |
 
 ---
@@ -154,11 +163,9 @@ yes-chef-impl/
 
 **Why fire-and-forget?** Processing a full menu takes 30–120 seconds — well past any reasonable HTTP timeout. The POST creates the quote and returns; work runs in a background task; clients poll or stream.
 
-**Why `asyncio.Semaphore` not Celery?** Prototype scope, single-server deployment. Semaphore gives bounded concurrency without a broker, workers, or ops overhead. Migrate to Temporal for multi-node production.
+**Why `asyncio.Semaphore` not Celery?** Prototype scope, single-server deployment. Semaphore gives bounded concurrency without a broker, workers, or ops overhead.
 
 **Why two LLM stages?** Decomposition and resolution have different inputs, tools, and failure modes. Separating them enables independent checkpointing, isolated context windows, and cleaner retries.
-
-**Why pgvector not Pinecone?** Single database, no additional service to operate, sufficient performance at catalog size (~5K items). Pinecone becomes worth it at multi-million-item scale.
 
 **Why in-memory EventBus?** Prototype scope, single server. SSE subscribers live in the same process as the publisher. A Redis pub/sub channel would be the natural replacement for multi-instance deployment.
 
@@ -166,13 +173,12 @@ yes-chef-impl/
 
 ## What Could Be Improved
 
-- Per-ingredient retry with exponential backoff (currently fail-fast on LLM errors)
-- Deterministic UOM parsing engine — regex + lookup tables instead of LLM interpretation
+- Add a more robust worker
 - Multi-provider catalog support (US Foods, Restaurant Depot)
 - Temporal.io for durable, multi-node workflow execution
-- Structured logging with job/item correlation IDs + token cost tracking per quote
-- Mobile-responsive frontend
-- Error boundaries and accessibility pass
+- Structured logging with quote/item correlation IDs + token cost tracking per quote (tracking)
+- Invalidate cache on Catalog update
+- Iterate on CatalogService embeddings
 
 ---
 

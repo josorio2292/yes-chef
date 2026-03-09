@@ -5,6 +5,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+docker-compose.override.yml
 
 # Ruff cache
 .ruff_cache/
