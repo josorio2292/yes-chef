@@ -2,6 +2,8 @@
 
 > **This document describes the system as it exists today.** It is factual, not aspirational. For future improvements, see [What Could Be Improved](#what-could-be-improved).
 
+> **For architecture diagrams and a visual walkthrough of design decisions, see [Key Concepts](concepts.md).**
+
 ---
 
 ## Table of Contents

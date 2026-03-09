@@ -181,4 +181,5 @@ yes-chef-impl/
 - [System Specification](docs/spec.md)
 - [Architecture Plan](docs/plan.md)
 - [Implementation Tasks](docs/tasks.md)
+- [Key Concepts](docs/concepts.md) — architecture deep-dive, diagrams, design decisions
 - [Design System](.interface-design/system.md)
