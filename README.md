@@ -178,7 +178,7 @@ yes-chef-impl/
 
 ## Documentation
 
-- [System Specification](SPEC.md)
+- [System Specification](docs/spec.md)
 - [Architecture Plan](docs/plan.md)
 - [Implementation Tasks](docs/tasks.md)
 - [Design System](.interface-design/system.md)
