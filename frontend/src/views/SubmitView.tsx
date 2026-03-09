@@ -1,7 +1,16 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { menuSpecSchema } from '../schemas'
 import { useSubmitJob } from '../api'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -168,220 +177,241 @@ export default function SubmitView() {
   // ── Render ───────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-canvas flex items-start justify-center px-4 py-16">
-      <div className="w-full max-w-[640px]">
-
-        {/* Card */}
-        <div
-          className="bg-surface-raised border border-border-subtle rounded-card px-10 py-10"
-          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.02)' }}
-        >
-          {/* Header */}
-          <header className="mb-10">
-            <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-text-primary mb-1.5">
+    <div className="min-h-screen bg-canvas flex items-center justify-center px-4 py-16">
+      <motion.div
+        className="w-full max-w-[640px]"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+      >
+        <Card className="bg-surface-raised border-border-subtle shadow-lg border-t-2 border-t-copper/60">
+          <CardHeader className="pb-4 pt-12 px-12">
+            <CardTitle className="font-display text-[42px] font-semibold tracking-[-0.03em] text-text-primary mb-1.5">
               Yes Chef
-            </h1>
-            <p className="text-sm text-text-secondary">
+            </CardTitle>
+            <CardDescription className="text-base text-text-secondary">
               Submit a menu spec — get a priced catering quote.
-            </p>
-          </header>
+            </CardDescription>
+          </CardHeader>
 
-          <form onSubmit={handleSubmit} noValidate>
+          <CardContent className="px-12 pb-12">
+            <form onSubmit={handleSubmit} noValidate className="space-y-8">
 
-            {/* ── Event Details ────────────────────────────── */}
-            <section className="mb-8">
-              <div className="flex items-center gap-3 mb-5">
-                <h2 className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary">
-                  Event Details
-                </h2>
-                <div className="flex-1 h-px bg-border-subtle" />
+              {/* ── Event Details ────────────────────────────── */}
+              <section>
+                <div className="flex items-center gap-3 mb-6">
+                  <h2 className="text-[11px] font-medium tracking-[0.12em] uppercase text-text-tertiary">
+                    Event Details
+                  </h2>
+                  <div className="flex-1 h-px bg-border-subtle" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-5 gap-y-6">
+                  {/* Event name */}
+                  <div className="col-span-2 space-y-3">
+                    <Label
+                      htmlFor="event-name"
+                      className="text-[13px] tracking-[0.06em] text-text-secondary after:content-['_*'] after:text-copper"
+                    >
+                      Event Name
+                    </Label>
+                    <Input
+                      id="event-name"
+                      type="text"
+                      placeholder="e.g. The Hartley Wedding"
+                      value={eventName}
+                      onChange={(e) => setEventName(e.target.value)}
+                      autoComplete="off"
+                      className="bg-inset border-border-default text-text-primary placeholder:text-text-muted text-[15px]"
+                    />
+                    {fieldErrors['event'] && (
+                      <span className="text-error-text text-sm">{fieldErrors['event']}</span>
+                    )}
+                  </div>
+
+                  {/* Date */}
+                  <div className="space-y-3">
+                    <Label
+                      htmlFor="date"
+                      className="text-[13px] tracking-[0.06em] text-text-secondary"
+                    >
+                      Date
+                    </Label>
+                    <Input
+                      id="date"
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="bg-inset border-border-default text-text-primary placeholder:text-text-muted text-[15px]"
+                    />
+                  </div>
+
+                  {/* Guest count */}
+                  <div className="space-y-3">
+                    <Label
+                      htmlFor="guest-count"
+                      className="text-[13px] tracking-[0.06em] text-text-secondary"
+                    >
+                      Guest Count (est.)
+                    </Label>
+                    <Input
+                      id="guest-count"
+                      type="number"
+                      min="1"
+                      placeholder="e.g. 120"
+                      value={guestCount}
+                      onChange={(e) => setGuestCount(e.target.value)}
+                      className="bg-inset border-border-default text-text-primary placeholder:text-text-muted text-[15px]"
+                    />
+                  </div>
+
+                  {/* Venue */}
+                  <div className="col-span-2 space-y-3">
+                    <Label
+                      htmlFor="venue"
+                      className="text-[13px] tracking-[0.06em] text-text-secondary"
+                    >
+                      Venue
+                    </Label>
+                    <Input
+                      id="venue"
+                      type="text"
+                      placeholder="e.g. Rooftop at The Palmer House"
+                      value={venue}
+                      onChange={(e) => setVenue(e.target.value)}
+                      autoComplete="off"
+                      className="bg-inset border-border-default text-text-primary placeholder:text-text-muted text-[15px]"
+                    />
+                  </div>
+
+                  {/* Notes */}
+                  <div className="col-span-2 space-y-3">
+                    <Label
+                      htmlFor="notes"
+                      className="text-[13px] tracking-[0.06em] text-text-secondary"
+                    >
+                      Notes
+                    </Label>
+                    <Textarea
+                      id="notes"
+                      placeholder="Dietary restrictions, service style, special requests…"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      rows={3}
+                      className="bg-inset border-border-default text-text-primary placeholder:text-text-muted text-[15px]"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* Decorative divider */}
+              <div className="flex items-center gap-3">
+                <Separator className="flex-1 bg-border-subtle" />
+                <span className="text-copper/40 text-xs">◆</span>
+                <Separator className="flex-1 bg-border-subtle" />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                {/* Event name */}
-                <div className="col-span-2 flex flex-col gap-1.5">
-                  <label
-                    className="text-xs font-medium tracking-wide text-text-secondary after:content-['_*'] after:text-copper"
-                    htmlFor="event-name"
+              {/* ── Menu Spec ────────────────────────────────── */}
+              <section>
+                <div className="flex items-center gap-3 mb-6">
+                  <h2 className="text-[11px] font-medium tracking-[0.12em] uppercase text-text-tertiary">
+                    Menu Spec
+                  </h2>
+                  <div className="flex-1 h-px bg-border-subtle" />
+                </div>
+
+                <div className="flex items-center gap-3 mb-5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="bg-surface border-border-default text-text-secondary hover:border-border-strong hover:text-text-primary inline-flex items-center gap-2"
+                    onClick={() => fileInputRef.current?.click()}
                   >
-                    Event Name
-                  </label>
-                  <input
-                    id="event-name"
-                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full transition-colors duration-150"
-                    type="text"
-                    placeholder="e.g. The Hartley Wedding"
-                    value={eventName}
-                    onChange={(e) => setEventName(e.target.value)}
-                    autoComplete="off"
+                    <UploadIcon />
+                    Upload .json
+                  </Button>
+                  <span className="text-xs text-text-muted">or paste JSON below</span>
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={(e) => handleFileUpload(e.target.files)}
+                />
+
+                {/* Parse summary */}
+                {parseSummary.length > 0 && (
+                  <div className="bg-copper-subtle border border-border-accent rounded-md p-4 mb-4">
+                    <p className="text-xs font-semibold tracking-wide text-copper mb-2.5">
+                      {parseSummary.reduce((sum, s) => sum + s.count, 0)} items across{' '}
+                      {parseSummary.length}{' '}
+                      {parseSummary.length === 1 ? 'category' : 'categories'}
+                    </p>
+                    <ul className={cn('flex flex-wrap gap-1.5 list-none')}>
+                      {parseSummary.map((s) => (
+                        <li key={s.category}>
+                          <Badge
+                            variant="outline"
+                            className="border-border-accent text-copper italic"
+                          >
+                            <span className="italic">{s.category}</span>{' '}
+                            <span className="text-copper/70 not-italic">({s.count})</span>
+                          </Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <Label
+                    htmlFor="menu-json"
+                    className="text-[13px] tracking-[0.06em] text-text-secondary"
+                  >
+                    Menu JSON
+                  </Label>
+                  <Textarea
+                    id="menu-json"
+                    placeholder={`{\n  "appetizers": [\n    { "name": "Bruschetta", "servings": 2 }\n  ]\n}`}
+                    value={menuJson}
+                    onChange={(e) => handleMenuJsonChange(e.target.value)}
+                    spellCheck={false}
+                    className="textarea-graph bg-inset border-border-default text-text-primary placeholder:text-text-muted text-[15px] font-mono text-[13px] min-h-[160px]"
                   />
-                  {fieldErrors['event'] && (
-                    <span className="text-error text-xs">{fieldErrors['event']}</span>
+                  {jsonError && (
+                    <span className="text-error-text text-sm">{jsonError}</span>
                   )}
                 </div>
+              </section>
 
-                {/* Date */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="date">
-                    Date
-                  </label>
-                  <input
-                    id="date"
-                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full transition-colors duration-150"
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                  />
-                </div>
-
-                {/* Guest count */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="guest-count">
-                    Guest Count (est.)
-                  </label>
-                  <input
-                    id="guest-count"
-                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full transition-colors duration-150"
-                    type="number"
-                    min="1"
-                    placeholder="e.g. 120"
-                    value={guestCount}
-                    onChange={(e) => setGuestCount(e.target.value)}
-                  />
-                </div>
-
-                {/* Venue */}
-                <div className="col-span-2 flex flex-col gap-1.5">
-                  <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="venue">
-                    Venue
-                  </label>
-                  <input
-                    id="venue"
-                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full transition-colors duration-150"
-                    type="text"
-                    placeholder="e.g. Rooftop at The Palmer House"
-                    value={venue}
-                    onChange={(e) => setVenue(e.target.value)}
-                    autoComplete="off"
-                  />
-                </div>
-
-                {/* Notes */}
-                <div className="col-span-2 flex flex-col gap-1.5">
-                  <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="notes">
-                    Notes
-                  </label>
-                  <textarea
-                    id="notes"
-                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full resize-y min-h-[80px] leading-relaxed transition-colors duration-150"
-                    placeholder="Dietary restrictions, service style, special requests…"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-              </div>
-            </section>
-
-            {/* Divider */}
-            <div className="h-px bg-border-subtle my-8" />
-
-            {/* ── Menu Spec ────────────────────────────────── */}
-            <section className="mb-8">
-              <div className="flex items-center gap-3 mb-5">
-                <h2 className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary">
-                  Menu Spec
-                </h2>
-                <div className="flex-1 h-px bg-border-subtle" />
-              </div>
-
-              <div className="flex items-center gap-3 mb-4">
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-inset border border-border-default rounded-button text-xs font-medium text-text-secondary hover:border-border-strong hover:text-text-primary transition-colors duration-150"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <UploadIcon />
-                  Upload .json
-                </button>
-                <span className="text-xs text-text-muted">or paste JSON below</span>
-              </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={(e) => handleFileUpload(e.target.files)}
-              />
-
-              {/* Parse summary */}
-              {parseSummary.length > 0 && (
-                <div className="bg-copper-subtle border border-border-default rounded-card px-4 py-3 mb-4"
-                  style={{ borderColor: 'rgba(193,127,78,0.3)' }}
-                >
-                  <p className="text-xs font-semibold tracking-wide text-copper mb-2.5">
-                    {parseSummary.reduce((sum, s) => sum + s.count, 0)} items across{' '}
-                    {parseSummary.length}{' '}
-                    {parseSummary.length === 1 ? 'category' : 'categories'}
-                  </p>
-                  <ul className="flex flex-wrap gap-1.5 list-none">
-                    {parseSummary.map((s) => (
-                      <li
-                        key={s.category}
-                        className="text-xs font-medium text-copper bg-surface-raised border rounded-badge px-2 py-0.5"
-                        style={{ borderColor: 'rgba(193,127,78,0.25)' }}
-                      >
-                        {s.category} <span className="text-copper/70">({s.count})</span>
-                      </li>
-                    ))}
-                  </ul>
+              {/* ── Error ────────────────────────────────────── */}
+              {submitError && (
+                <div className="bg-error-subtle border border-error/20 rounded-md px-4 py-3 text-[15px] text-error-text leading-relaxed">
+                  {submitError}
                 </div>
               )}
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="menu-json">
-                  Menu JSON
-                </label>
-                <textarea
-                  id="menu-json"
-                  className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-[13px] font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full resize-y min-h-[160px] leading-relaxed transition-colors duration-150"
-                  placeholder={`{\n  "appetizers": [\n    { "name": "Bruschetta", "servings": 2 }\n  ]\n}`}
-                  value={menuJson}
-                  onChange={(e) => handleMenuJsonChange(e.target.value)}
-                  spellCheck={false}
-                />
-                {jsonError && (
-                  <span className="text-error text-xs">{jsonError}</span>
-                )}
+              {/* ── Footer / CTA ─────────────────────────────── */}
+              <div className="border-t border-border-subtle pt-8 mt-2">
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full h-12 bg-copper hover:bg-copper-hover text-white text-[15px] font-semibold tracking-[0.08em] uppercase"
+                >
+                  {submitting && (
+                    <span className="w-4 h-4 border-2 border-white/25 border-t-white rounded-full animate-spin mr-3" />
+                  )}
+                  {submitting ? 'Sending to kitchen…' : 'Start Quote'}
+                </Button>
               </div>
-            </section>
 
-            {/* ── Error ────────────────────────────────────── */}
-            {submitError && (
-              <div className="bg-error-subtle border border-error/20 rounded-card px-4 py-3 mb-6 text-sm text-error leading-relaxed">
-                {submitError}
-              </div>
-            )}
-
-            {/* ── Footer / CTA ─────────────────────────────── */}
-            <div className="pt-6 border-t border-border-subtle mt-2">
-              <button
-                type="submit"
-                className="w-full inline-flex items-center justify-center gap-3 px-6 py-3.5 bg-copper hover:bg-copper-hover active:scale-[0.99] text-white border-none rounded-button text-[15px] font-semibold tracking-[-0.01em] transition-all duration-150 disabled:opacity-55 disabled:cursor-not-allowed"
-                disabled={submitting}
-              >
-                {submitting && (
-                  <span className="w-4 h-4 border-2 border-white/35 border-t-white rounded-full animate-spin" />
-                )}
-                {submitting ? 'Sending to kitchen…' : 'Start Quote'}
-              </button>
-            </div>
-
-          </form>
-        </div>
-
-      </div>
+            </form>
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   )
 }

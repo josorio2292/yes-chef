@@ -1,8 +1,14 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import type { KeyboardEvent, SVGProps } from 'react'
+import { motion } from 'motion/react'
 import { useQuote } from '../api'
 import type { Quote, LineItem, Ingredient } from '../schemas'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
 
 /* ─── Source Badge ─────────────────────────────────────────────────────────── */
 
@@ -11,24 +17,27 @@ type IngredientSource = 'sysco_catalog' | 'estimated' | 'not_available'
 const SOURCE_MAP: Record<IngredientSource, { label: string; className: string }> = {
   sysco_catalog: {
     label: 'Catalog',
-    className: 'bg-success-subtle text-success',
+    className: 'bg-copper-subtle text-copper',
   },
   estimated: {
     label: 'Estimated',
-    className: 'bg-warning-subtle text-warning',
+    className: 'bg-warning-subtle text-warning-text',
   },
   not_available: {
     label: "86'd",
-    className: 'bg-error-subtle text-error',
+    className: 'bg-error-subtle text-error-text',
   },
 }
 
 function SourceBadge({ source }: { source: string }) {
   const config = SOURCE_MAP[source as IngredientSource] ?? { label: source, className: 'bg-surface text-text-secondary' }
   return (
-    <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded-[4px] whitespace-nowrap ${config.className}`}>
+    <Badge
+      variant="outline"
+      className={cn('font-mono text-[11px] border-border-subtle', config.className)}
+    >
       {config.label}
-    </span>
+    </Badge>
   )
 }
 
@@ -37,7 +46,7 @@ function SourceBadge({ source }: { source: string }) {
 function IngredientTable({ ingredients }: { ingredients: Ingredient[] }) {
   if (!ingredients || ingredients.length === 0) {
     return (
-      <p className="px-4 py-3 text-text-tertiary text-sm">
+      <p className="px-4 py-3 text-text-tertiary text-base">
         No ingredients recorded.
       </p>
     )
@@ -47,39 +56,39 @@ function IngredientTable({ ingredients }: { ingredients: Ingredient[] }) {
     <table className="w-full border-collapse text-sm" aria-label="Ingredients">
       <thead className="bg-surface">
         <tr>
-          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-left border-b border-border-subtle whitespace-nowrap">
+          <th className="px-5 py-3 text-[11px] font-medium tracking-[0.08em] uppercase text-text-tertiary text-left border-b border-border-subtle whitespace-nowrap">
             Ingredient
           </th>
-          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-left border-b border-border-subtle whitespace-nowrap">
+          <th className="px-5 py-3 text-[11px] font-medium tracking-[0.08em] uppercase text-text-tertiary text-left border-b border-border-subtle whitespace-nowrap">
             Quantity
           </th>
-          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-right border-b border-border-subtle whitespace-nowrap">
+          <th className="px-5 py-3 text-[11px] font-medium tracking-[0.08em] uppercase text-text-tertiary text-right border-b border-border-subtle whitespace-nowrap">
             Unit Cost
           </th>
-          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-left border-b border-border-subtle whitespace-nowrap">
+          <th className="px-5 py-3 text-[11px] font-medium tracking-[0.08em] uppercase text-text-tertiary text-left border-b border-border-subtle whitespace-nowrap">
             Source
           </th>
-          <th className="px-4 py-2 text-xs font-medium tracking-wide uppercase text-text-secondary text-right border-b border-border-subtle whitespace-nowrap">
+          <th className="px-5 py-3 text-[11px] font-medium tracking-[0.08em] uppercase text-text-tertiary text-right border-b border-border-subtle whitespace-nowrap">
             Catalog #
           </th>
         </tr>
       </thead>
       <tbody>
         {ingredients.map((ing, idx) => (
-          <tr key={idx} className={`border-t border-border-subtle first:border-t-0 transition-colors duration-150 hover:bg-surface ${idx % 2 === 0 ? 'bg-surface/50' : ''}`}>
-            <td className="px-4 py-2.5 text-text-primary min-w-[120px]">
+          <tr key={idx} className="border-t border-border-subtle hover:bg-surface-hover transition-colors">
+            <td className="px-5 py-3 text-text-primary min-w-[120px]">
               {ing.name}
             </td>
-            <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap min-w-[80px]">
+            <td className="px-5 py-3 text-text-secondary whitespace-nowrap min-w-[80px]">
               {ing.quantity}
             </td>
-            <td className="px-4 py-2.5 font-mono tabular-nums text-text-primary text-right whitespace-nowrap min-w-[80px]">
+            <td className="px-5 py-3 font-mono tabular-nums text-text-primary text-right whitespace-nowrap min-w-[80px]">
               {formatCurrency(ing.unit_cost)}
             </td>
-            <td className="px-4 py-2.5 whitespace-nowrap min-w-[100px]">
+            <td className="px-5 py-3 whitespace-nowrap min-w-[100px]">
               <SourceBadge source={ing.source} />
             </td>
-            <td className="px-4 py-2.5 font-mono tabular-nums text-[11px] text-text-tertiary text-right whitespace-nowrap min-w-[100px]">
+            <td className="px-5 py-3 font-mono tabular-nums text-[11px] text-text-tertiary text-right whitespace-nowrap min-w-[100px]">
               {ing.source_item_id ?? (
                 <span className="text-text-muted">—</span>
               )}
@@ -93,7 +102,7 @@ function IngredientTable({ ingredients }: { ingredients: Ingredient[] }) {
 
 /* ─── Line Item Card ───────────────────────────────────────────────────────── */
 
-function LineItemCard({ item }: { item: LineItem }) {
+function LineItemCard({ item, idx }: { item: LineItem; idx: number }) {
   const [expanded, setExpanded] = useState(false)
 
   const toggleExpanded = () => setExpanded((prev) => !prev)
@@ -106,49 +115,61 @@ function LineItemCard({ item }: { item: LineItem }) {
   }
 
   return (
-    <article
-      className="bg-surface-raised border border-border-subtle rounded-card shadow-sm overflow-hidden transition-shadow duration-200 hover:shadow-md"
-      aria-expanded={expanded}
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: idx * 0.06 }}
     >
-      <div
-        className="flex items-center justify-between px-4 py-3.5 cursor-pointer select-none gap-3 transition-colors duration-150 hover:bg-surface"
-        onClick={toggleExpanded}
-        onKeyDown={handleKeyDown}
-        role="button"
-        tabIndex={0}
-        aria-label={`${item.item_name} — ${expanded ? 'collapse' : 'expand'}`}
+      <Card
+        className="bg-surface-raised border-border-subtle shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200 py-0 gap-0"
+        aria-expanded={expanded}
       >
-        <div className="flex items-center gap-2.5 flex-1 min-w-0">
-          <span className="text-base font-medium text-text-primary whitespace-nowrap overflow-hidden text-ellipsis">
-            {item.item_name}
-          </span>
-          {item.category && (
-            <span className="shrink-0 inline-block text-xs font-medium tracking-wide text-text-secondary bg-inset border border-border-subtle rounded-badge px-2 py-0.5 capitalize whitespace-nowrap">
-              {item.category}
+        <div
+          className="flex items-center justify-between px-6 py-5 cursor-pointer select-none gap-4 hover:bg-surface-hover transition-colors duration-150"
+          onClick={toggleExpanded}
+          onKeyDown={handleKeyDown}
+          role="button"
+          tabIndex={0}
+          aria-label={`${item.item_name} — ${expanded ? 'collapse' : 'expand'}`}
+        >
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            <span className="text-[17px] font-semibold text-text-primary whitespace-nowrap overflow-hidden text-ellipsis">
+              {item.item_name}
             </span>
-          )}
+            {item.category && (
+              <Badge
+                variant="outline"
+                className="shrink-0 bg-surface border-border-subtle text-text-secondary text-[11px] capitalize"
+              >
+                {item.category}
+              </Badge>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4 shrink-0">
+            <span className="font-mono tabular-nums text-[15px] text-text-primary text-right whitespace-nowrap">
+              {formatCurrency(item.ingredient_cost_per_unit)}
+            </span>
+            <ChevronDownIcon
+              className={cn(
+                'w-4 h-4 text-text-tertiary shrink-0 transition-transform duration-200 ease-out',
+                expanded && 'rotate-180'
+              )}
+              aria-hidden="true"
+            />
+          </div>
         </div>
 
-        <div className="flex items-center gap-4 shrink-0">
-          <span className="font-mono tabular-nums text-sm text-text-primary text-right whitespace-nowrap">
-            {formatCurrency(item.ingredient_cost_per_unit)}
-          </span>
-          <ChevronDownIcon
-            className={`w-4 h-4 text-text-tertiary shrink-0 transition-transform duration-200 ease-out ${expanded ? 'rotate-180' : ''}`}
-            aria-hidden="true"
-          />
+        <div
+          className={`overflow-hidden transition-all duration-[250ms] ease-out ${expanded ? 'max-h-[600px]' : 'max-h-0'}`}
+          aria-hidden={!expanded}
+        >
+          <div className="border-t border-border-subtle">
+            <IngredientTable ingredients={item.ingredients} />
+          </div>
         </div>
-      </div>
-
-      <div
-        className={`overflow-hidden transition-all duration-200 ease-out ${expanded ? 'max-h-[600px]' : 'max-h-0'}`}
-        aria-hidden={!expanded}
-      >
-        <div className="border-t border-border-subtle">
-          <IngredientTable ingredients={item.ingredients} />
-        </div>
-      </div>
-    </article>
+      </Card>
+    </motion.div>
   )
 }
 
@@ -243,9 +264,9 @@ export default function PassView() {
   /* ── Loading ── */
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-canvas px-6 py-8">
+      <div className="min-h-screen bg-canvas px-8 pt-12 pb-20">
         <div className="max-w-[900px] mx-auto">
-          <p className="text-center py-16 text-text-tertiary text-sm">Loading quote…</p>
+          <p className="text-center py-16 text-text-tertiary text-base">Loading quote…</p>
         </div>
       </div>
     )
@@ -254,9 +275,9 @@ export default function PassView() {
   /* ── Error ── */
   if (error) {
     return (
-      <div className="min-h-screen bg-canvas px-6 py-8">
+      <div className="min-h-screen bg-canvas px-8 pt-12 pb-20">
         <div className="max-w-[900px] mx-auto">
-          <p className="text-center py-16 text-error text-sm">
+          <p className="text-center py-16 text-error text-base">
             {error instanceof Error ? error.message : 'Failed to load quote.'}
           </p>
         </div>
@@ -267,9 +288,9 @@ export default function PassView() {
   /* ── Empty ── */
   if (!quote) {
     return (
-      <div className="min-h-screen bg-canvas px-6 py-8">
+      <div className="min-h-screen bg-canvas px-8 pt-12 pb-20">
         <div className="max-w-[900px] mx-auto">
-          <p className="text-center py-16 text-text-tertiary text-sm">No quote available.</p>
+          <p className="text-center py-16 text-text-tertiary text-base">No quote available.</p>
         </div>
       </div>
     )
@@ -279,77 +300,86 @@ export default function PassView() {
   const total = computeTotal(lineItems)
 
   return (
-    <main className="min-h-screen bg-canvas px-6 pt-8 pb-12">
-      <div className="max-w-[900px] mx-auto flex flex-col gap-6">
+    <main className="min-h-screen bg-canvas px-8 pt-12 pb-20">
+      <motion.div
+        className="max-w-[900px] mx-auto flex flex-col gap-8"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
 
         {/* ── Summary Header ── */}
-        <section
-          className="bg-surface-raised border border-border-subtle rounded-card shadow-sm p-6 flex flex-col gap-2"
+        <Card
+          className="bg-surface-raised border-border-subtle shadow-lg px-8 py-8 gap-0"
           aria-label="Quote summary"
         >
-          <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-text-primary leading-tight m-0">
-            {quote.event}
-          </h1>
+          <CardContent className="px-0 flex flex-col gap-3">
+            <h1 className="font-display text-[36px] font-semibold tracking-[-0.02em] text-text-primary italic leading-tight m-0">
+              {quote.event}
+            </h1>
 
-          <div className="flex items-center gap-3 text-sm text-text-secondary flex-wrap">
-            {quote.date && (
-              <>
-                <span>{formatDate(quote.date)}</span>
-                {quote.venue && <span className="text-text-muted select-none">·</span>}
-              </>
-            )}
-            {quote.venue && <span>{quote.venue}</span>}
-          </div>
-
-          <div className="flex items-center justify-between mt-3 pt-4 border-t border-border-subtle flex-wrap gap-3">
-            <p className="text-sm text-text-secondary">
-              <strong className="font-semibold text-text-primary">{lineItems.length}</strong>{' '}
-              {lineItems.length === 1 ? 'menu item' : 'menu items'}
-            </p>
-
-            <div className="text-right">
-              <span className="block text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary mb-1 font-sans">
-                Total Cost
-              </span>
-              <span className="text-[28px] font-mono font-semibold tabular-nums text-text-primary leading-none">
-                {formatCurrency(total)}
-              </span>
+            <div className="flex items-center gap-3 text-base text-text-secondary flex-wrap">
+              {quote.date && (
+                <>
+                  <span>{formatDate(quote.date)}</span>
+                  {quote.venue && <span className="text-text-muted select-none"> — </span>}
+                </>
+              )}
+              {quote.venue && <span>{quote.venue}</span>}
             </div>
-          </div>
-        </section>
+
+            <Separator className="mt-4 bg-border-subtle" />
+
+            <div className="flex items-center justify-between pt-5 flex-wrap gap-4">
+              <p className="text-base text-text-secondary">
+                <strong className="font-semibold text-text-primary">{lineItems.length}</strong>{' '}
+                {lineItems.length === 1 ? 'menu item' : 'menu items'}
+              </p>
+
+              <div className="text-right">
+                <span className="font-mono text-[36px] font-medium tabular-nums text-text-primary leading-none">
+                  {formatCurrency(total)}
+                </span>
+                <span className="block text-[11px] font-medium tracking-[0.12em] uppercase text-text-tertiary mt-1">
+                  Total Ingredient Cost
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* ── Line Items ── */}
         <section aria-label="Line items">
           {lineItems.length === 0 ? (
-            <p className="text-center py-16 text-text-tertiary text-sm">
+            <p className="text-center py-16 text-text-tertiary text-base">
               No line items in this quote.
             </p>
           ) : (
-            <div className="flex flex-col gap-2">
-              <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary mb-2">
+            <div className="flex flex-col gap-3">
+              <p className="text-[11px] font-medium tracking-[0.12em] uppercase text-text-tertiary mb-4">
                 Line Items
               </p>
               {lineItems.map((item, idx) => (
-                <LineItemCard key={item.item_name ?? idx} item={item} />
+                <LineItemCard key={item.item_name ?? idx} item={item} idx={idx} />
               ))}
             </div>
           )}
         </section>
 
         {/* ── Export ── */}
-        <div className="flex justify-center pt-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 font-sans text-sm font-medium text-text-secondary bg-surface border border-border-default rounded-card px-4 py-2.5 cursor-pointer transition-all duration-150 hover:border-border-strong hover:text-text-primary active:bg-inset select-none"
+        <div className="flex justify-center pt-4">
+          <Button
+            variant="ghost"
+            className="inline-flex items-center gap-2 text-[13px] text-text-tertiary hover:text-text-primary"
             onClick={() => exportQuote(quote)}
             aria-label="Export quote as JSON file"
           >
             <DownloadIcon />
             Export JSON
-          </button>
+          </Button>
         </div>
 
-      </div>
+      </motion.div>
     </main>
   )
 }

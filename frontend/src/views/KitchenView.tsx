@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { motion, AnimatePresence } from 'motion/react'
 import { useJobStatus } from '../api'
 import type { JobStatus } from '../schemas'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,8 +43,8 @@ function stationLabel(item: JobItem): string {
 }
 
 function stationLabelColor(item: JobItem): string {
-  if (item.status === 'completed') return 'text-success font-medium'
-  if (item.status === 'failed') return 'text-error font-medium'
+  if (item.status === 'completed') return 'text-success-text font-medium'
+  if (item.status === 'failed') return 'text-error-text font-medium'
   if (
     item.status === 'decomposing' ||
     item.status === 'decomposed' ||
@@ -94,7 +99,7 @@ function recalcCounters(items: JobItem[]) {
 
 // ── Ticket Card ──────────────────────────────────────────────────────────────
 
-function TicketCard({ item }: { item: JobItem }) {
+function TicketCard({ item, index }: { item: JobItem; index: number }) {
   const borderColor = cardStateClasses(item)
   const labelColor = stationLabelColor(item)
   const station = stationLabel(item)
@@ -105,21 +110,41 @@ function TicketCard({ item }: { item: JobItem }) {
     item.status === 'resolving'
 
   return (
-    <article
-      className={`bg-surface-raised border border-border-subtle border-l-[3px] ${borderColor} rounded-[8px] shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.06)] p-4 w-[220px] min-w-[200px] transition-all duration-200 ${isProcessing ? 'animate-pulse-copper' : ''}`}
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.05 }}
     >
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <span className={`text-[16px] font-medium leading-tight flex-1 ${item.status === 'pending' ? 'text-text-muted' : 'text-text-primary'}`}>
-          {item.item_name}
-        </span>
-        <span className="text-[11px] font-medium tracking-wide text-text-secondary bg-surface px-2 py-0.5 rounded-[4px] whitespace-nowrap shrink-0">
-          {category}
-        </span>
-      </div>
-      <div className={`text-[13px] mt-1 ${labelColor}`}>
-        {station}
-      </div>
-    </article>
+      <Card
+        className={cn(
+          'bg-surface-raised border-border-subtle border-l-[4px] shadow-sm p-0 w-[230px] min-w-[210px] transition-all duration-200 gap-0',
+          borderColor,
+          isProcessing && 'animate-pulse-copper shadow-glow',
+        )}
+      >
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <span
+              className={cn(
+                'text-[16px] font-medium leading-tight flex-1',
+                item.status === 'pending' ? 'text-text-muted' : 'text-text-primary',
+              )}
+            >
+              {item.item_name}
+            </span>
+            <Badge
+              variant="outline"
+              className="bg-surface border-border-subtle text-text-secondary text-[11px] whitespace-nowrap shrink-0"
+            >
+              {category}
+            </Badge>
+          </div>
+          <div className={cn('text-[13px] mt-1', labelColor)}>
+            {station}
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
   )
 }
 
@@ -136,10 +161,15 @@ function Station({ label, icon, items, hidden }: StationProps) {
   if (hidden) return null
 
   return (
-    <section className="flex flex-col gap-4">
+    <motion.section
+      className="flex flex-col gap-5"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+    >
       <div className="flex items-center gap-2">
-        <span className="text-[13px] text-text-tertiary leading-none">{icon}</span>
-        <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary">
+        <span className="text-[11px] text-text-tertiary leading-none">{icon}</span>
+        <span className="text-[11px] font-medium tracking-[0.12em] uppercase text-text-tertiary">
           {label}
           {items.length > 0 && (
             <span className="font-normal text-text-muted ml-1">({items.length})</span>
@@ -147,13 +177,13 @@ function Station({ label, icon, items, hidden }: StationProps) {
         </span>
       </div>
       {items.length > 0 && (
-        <div className="flex flex-wrap gap-3">
-          {items.map((item) => (
-            <TicketCard key={item.item_name} item={item} />
+        <div className="flex flex-wrap gap-4">
+          {items.map((item, index) => (
+            <TicketCard key={item.item_name} item={item} index={index} />
           ))}
         </div>
       )}
-    </section>
+    </motion.section>
   )
 }
 
@@ -163,18 +193,26 @@ interface CounterProps {
   value: number
   label: string
   valueColor?: string
+  glow?: boolean
 }
 
-function Counter({ value, label, valueColor = 'text-text-primary' }: CounterProps) {
+function Counter({ value, label, valueColor = 'text-text-primary', glow = false }: CounterProps) {
   return (
-    <div className="flex flex-col items-start gap-1 bg-surface-raised border border-border-subtle rounded-[8px] px-4 py-3 min-w-[88px] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-      <span className={`text-[32px] font-semibold tabular-nums leading-none ${valueColor}`}>
-        {value}
-      </span>
-      <span className="text-[11px] font-medium tracking-[0.06em] uppercase text-text-tertiary leading-none mt-1">
-        {label}
-      </span>
-    </div>
+    <Card
+      className={cn(
+        'bg-surface-raised border-border-subtle shadow-sm gap-0 min-w-[100px] p-0',
+        glow && 'shadow-glow',
+      )}
+    >
+      <CardContent className="flex flex-col items-start gap-1 px-5 py-4">
+        <span className={cn('font-mono text-[40px] font-medium tabular-nums leading-none', valueColor)}>
+          {value}
+        </span>
+        <span className="text-[11px] font-medium tracking-[0.12em] uppercase text-text-tertiary leading-none mt-1">
+          {label}
+        </span>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -297,37 +335,58 @@ export default function KitchenView() {
   return (
     <div className="min-h-screen bg-canvas flex flex-col">
       {/* ── Header ── */}
-      <header className="bg-surface-raised border-b border-border-subtle shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-        <div className="max-w-[1200px] mx-auto px-8 py-6">
-        <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-text-primary mb-6">
-          Kitchen
-        </h1>
+      <motion.header
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="max-w-[1200px] mx-auto px-8 pt-12 pb-8">
+          <h1 className="font-display text-[42px] font-semibold tracking-[-0.03em] text-text-primary mb-8">
+            Kitchen
+          </h1>
 
-        <div className="flex gap-3 flex-wrap">
-          <Counter value={totalItems}     label="Total items"  valueColor="text-text-primary"  />
-          <Counter value={inProgress}     label="In progress"  valueColor="text-copper"         />
-          <Counter value={completedItems} label="Completed"    valueColor="text-success"        />
-          <Counter value={failedItems}    label="Failed"       valueColor="text-error"          />
-        </div>
-
-        {jobDone && (
-          <div className="mt-5 px-4 py-3 bg-success-subtle border border-success/20 rounded-[8px] flex items-center gap-4">
-            <span className="text-[14px] font-medium text-success flex-1">✓ All items processed — quote is ready.</span>
-            <button
-              className="px-3 py-1.5 bg-transparent border border-copper text-copper rounded-[6px] text-[13px] font-medium cursor-pointer hover:bg-copper-subtle transition-colors"
-              onClick={() => navigate(`/pass/${jobId}`)}
-            >
-              View Quote →
-            </button>
+          <div className="flex gap-4 flex-wrap">
+            <Counter value={totalItems}     label="Total items"  valueColor="text-text-primary"                              />
+            <Counter value={inProgress}     label="In progress"  valueColor="text-copper"        glow={inProgress > 0}       />
+            <Counter value={completedItems} label="Completed"    valueColor="text-success"                                   />
+            <Counter value={failedItems}    label="Failed"       valueColor="text-error"                                     />
           </div>
-        )}
+
+          <AnimatePresence>
+            {jobDone && (
+              <motion.div
+                key="job-done-banner"
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.3 }}
+                className="mt-6 bg-success-subtle/50 border border-success/20 rounded-md px-5 py-4 flex items-center gap-4"
+              >
+                <span className="text-[14px] font-medium text-success-text flex-1">
+                  ✓ All items processed — quote is ready.
+                </span>
+                <Button
+                  variant="outline"
+                  className="border-copper text-copper hover:bg-copper-subtle"
+                  onClick={() => navigate(`/pass/${jobId}`)}
+                >
+                  View Quote →
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
-      </header>
+      </motion.header>
 
       {/* ── Ticket rail ── */}
-      <main className="flex-1 px-8 py-8 flex flex-col gap-8 max-w-[1200px] w-full mx-auto self-start">
+      <motion.main
+        className="flex-1 px-8 pt-10 pb-16 flex flex-col gap-10 max-w-[1200px] w-full mx-auto self-start"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+      >
         {items.length === 0 ? (
-          <div className="flex items-center justify-center py-20 text-[13px] text-text-muted">
+          <div className="flex items-center justify-center py-24 text-base text-text-tertiary">
             {jobId === 'demo'
               ? 'Submit a menu to start tracking progress.'
               : 'Loading items…'}
@@ -336,22 +395,28 @@ export default function KitchenView() {
           <>
             <Station
               label="Prep"
-              icon="🔪"
+              icon="◆"
               items={prep}
               hidden={prep.length === 0 && pending.length === 0 && done.length + eightySixed.length === items.length}
             />
-            <Station label="Pending" icon="⏳" items={pending} hidden={pending.length === 0} />
-            <Station label="Match"   icon="🔍" items={match}   hidden={match.length === 0} />
-            <Station label="Done"    icon="✓"  items={done}    hidden={done.length === 0} />
-            <Station label="86'd"    icon="✗"  items={eightySixed} hidden={eightySixed.length === 0} />
+            <Station label="Pending" icon="◇" items={pending}      hidden={pending.length === 0}      />
+            <Station label="Match"   icon="◈" items={match}        hidden={match.length === 0}        />
+            <Station label="Done"    icon="✓" items={done}         hidden={done.length === 0}         />
+            <Station label="86'd"    icon="✕" items={eightySixed}  hidden={eightySixed.length === 0}  />
           </>
         )}
-      </main>
+      </motion.main>
 
       {/* ── Connection status indicator ── */}
       {jobId !== 'demo' && (
-        <div className="fixed bottom-4 right-4 text-[11px] font-medium tracking-[0.04em] px-2.5 py-1.5 rounded-[6px] border border-border-subtle bg-surface-raised shadow-[0_1px_3px_rgba(0,0,0,0.06)] text-text-tertiary flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${connDotColor}`} />
+        <div className="fixed bottom-6 right-6 text-[11px] font-medium tracking-[0.04em] px-3 py-2 rounded-sm border border-border-subtle bg-surface-raised shadow-sm text-text-tertiary flex items-center gap-1.5">
+          <span
+            className={cn(
+              'w-1.5 h-1.5 rounded-full shrink-0',
+              connDotColor,
+              connStatus === 'live' && 'animate-breathe',
+            )}
+          />
           {connStatus === 'live'       && 'Live'}
           {connStatus === 'connecting' && 'Connecting…'}
           {connStatus === 'error'      && 'Polling'}
