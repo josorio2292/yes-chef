@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from yes_chef.catalog.provider import ItemNotFoundError, PriceResult
 from yes_chef.catalog.service import CatalogCandidate, CatalogService
-from yes_chef.db.models import Base, IngredientCache, Job, WorkItem
+from yes_chef.db.models import Base, IngredientCache, Quote, MenuItem
 from yes_chef.decomposition.engine import Ingredient
 
 TEST_DB_URL = os.environ.get(
@@ -178,20 +178,20 @@ async def test_matching_agent_finds_match(resolution_session_factory):
         search_results=candidates, price_result=price
     )
 
-    # Create a job + work item (committed so resolve_item's own session can see it)
+    # Create a quote + menu item (committed so resolve_item's own session can see it)
     async with resolution_session_factory() as sess:
-        job = Job(event="Test Beef Event", status="pending", menu_spec={})
-        sess.add(job)
+        quote = Quote(event="Test Beef Event", status="pending", menu_spec={})
+        sess.add(quote)
         await sess.flush()
-        work_item = WorkItem(
-            job_id=job.id,
+        menu_item = MenuItem(
+            quote_id=quote.id,
             item_name="Beef Tenderloin",
             category="entrees",
             status="pending",
         )
-        sess.add(work_item)
+        sess.add(menu_item)
         await sess.commit()
-        work_item_id = work_item.id
+        menu_item_id = menu_item.id
 
     mock_output = {
         "name": "beef tenderloin",
@@ -209,7 +209,7 @@ async def test_matching_agent_finds_match(resolution_session_factory):
         result = await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item_id,
+            menu_item_id=menu_item_id,
             session_factory=resolution_session_factory,
         )
 
@@ -242,18 +242,18 @@ async def test_matching_agent_not_available(resolution_session_factory):
     catalog_svc = make_mock_catalog_service(search_results=[], price_result=None)
 
     async with resolution_session_factory() as sess:
-        job = Job(event="Test Truffle Event", status="pending", menu_spec={})
-        sess.add(job)
+        quote = Quote(event="Test Truffle Event", status="pending", menu_spec={})
+        sess.add(quote)
         await sess.flush()
-        work_item = WorkItem(
-            job_id=job.id,
+        menu_item = MenuItem(
+            quote_id=quote.id,
             item_name="Truffle Dish",
             category="entrees",
             status="pending",
         )
-        sess.add(work_item)
+        sess.add(menu_item)
         await sess.commit()
-        work_item_id = work_item.id
+        menu_item_id = menu_item.id
 
     mock_output = {
         "name": "truffle oil",
@@ -271,7 +271,7 @@ async def test_matching_agent_not_available(resolution_session_factory):
         result = await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item_id,
+            menu_item_id=menu_item_id,
             session_factory=resolution_session_factory,
         )
 
@@ -319,18 +319,18 @@ async def test_cache_populated_after_agent(resolution_session_factory):
     )
 
     async with resolution_session_factory() as sess:
-        job = Job(event="Chicken Event", status="pending", menu_spec={})
-        sess.add(job)
+        quote = Quote(event="Chicken Event", status="pending", menu_spec={})
+        sess.add(quote)
         await sess.flush()
-        work_item = WorkItem(
-            job_id=job.id,
+        menu_item = MenuItem(
+            quote_id=quote.id,
             item_name="Chicken Breast",
             category="entrees",
             status="pending",
         )
-        sess.add(work_item)
+        sess.add(menu_item)
         await sess.commit()
-        work_item_id = work_item.id
+        menu_item_id = menu_item.id
 
     mock_output = {
         "name": "chicken breast",
@@ -348,7 +348,7 @@ async def test_cache_populated_after_agent(resolution_session_factory):
         await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item_id,
+            menu_item_id=menu_item_id,
             session_factory=resolution_session_factory,
         )
 
@@ -388,18 +388,18 @@ async def test_subsequent_call_hits_fast_path(resolution_session_factory):
     catalog_svc = make_mock_catalog_service(price_result=price)
 
     async with resolution_session_factory() as sess:
-        job = Job(event="Salmon Event", status="pending", menu_spec={})
-        sess.add(job)
+        quote = Quote(event="Salmon Event", status="pending", menu_spec={})
+        sess.add(quote)
         await sess.flush()
-        work_item = WorkItem(
-            job_id=job.id,
+        menu_item = MenuItem(
+            quote_id=quote.id,
             item_name="Salmon",
             category="entrees",
             status="pending",
         )
-        sess.add(work_item)
+        sess.add(menu_item)
         await sess.commit()
-        work_item_id = work_item.id
+        menu_item_id = menu_item.id
 
     ingredient = Ingredient(name="salmon fillet", quantity="6 oz")
 
@@ -416,7 +416,7 @@ async def test_subsequent_call_hits_fast_path(resolution_session_factory):
         result = await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item_id,
+            menu_item_id=menu_item_id,
             session_factory=resolution_session_factory,
         )
 
@@ -480,7 +480,7 @@ async def test_cost_rollup():
 
 
 async def test_partial_ingredient_failure(resolution_session_factory):
-    """One ingredient fails; gets not_available. Work item status not marked failed."""
+    """One ingredient fails; gets not_available. Menu item status not marked failed."""
     from yes_chef.resolution.engine import matching_agent, resolve_item
 
     # First ingredient resolves fine
@@ -502,18 +502,18 @@ async def test_partial_ingredient_failure(resolution_session_factory):
     )
 
     async with resolution_session_factory() as sess:
-        job = Job(event="Partial Failure Event", status="pending", menu_spec={})
-        sess.add(job)
+        quote = Quote(event="Partial Failure Event", status="pending", menu_spec={})
+        sess.add(quote)
         await sess.flush()
-        work_item = WorkItem(
-            job_id=job.id,
+        menu_item = MenuItem(
+            quote_id=quote.id,
             item_name="Test Dish",
             category="entrees",
             status="pending",
         )
-        sess.add(work_item)
+        sess.add(menu_item)
         await sess.commit()
-        work_item_id = work_item.id
+        menu_item_id = menu_item.id
 
     # Good match output for butter
     good_output = {
@@ -549,7 +549,7 @@ async def test_partial_ingredient_failure(resolution_session_factory):
         result = await resolve_item(
             ingredients=[ingredient_good, ingredient_bad],
             catalog_service=catalog_svc,
-            work_item_id=work_item_id,
+            menu_item_id=menu_item_id,
             session_factory=resolution_session_factory,
         )
 
@@ -561,10 +561,12 @@ async def test_partial_ingredient_failure(resolution_session_factory):
     assert bad_match.source == "not_available"
     assert bad_match.unit_cost is None
 
-    # Work item should NOT be marked failed (resolve_item checkpoints as "completed")
+    # Menu item should NOT be marked failed (resolve_item checkpoints as "completed")
     async with resolution_session_factory() as sess:
-        wi = await sess.get(WorkItem, work_item_id)
-        assert wi.status != "failed", "Partial failure must not mark work item failed"
+        mi = await sess.get(MenuItem, menu_item_id)
+        assert mi.status != "failed", (
+            "Partial failure must not mark menu item failed"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -573,7 +575,7 @@ async def test_partial_ingredient_failure(resolution_session_factory):
 
 
 async def test_resolve_checkpoint(resolution_session_factory):
-    """After resolve_item, work item status is 'completed' and step_data has results."""
+    """After resolve_item, menu item status is 'completed' and step_data has results."""
     from yes_chef.resolution.engine import matching_agent, resolve_item
 
     candidates = [
@@ -594,18 +596,18 @@ async def test_resolve_checkpoint(resolution_session_factory):
     )
 
     async with resolution_session_factory() as sess:
-        job = Job(event="Checkpoint Event", status="pending", menu_spec={})
-        sess.add(job)
+        quote = Quote(event="Checkpoint Event", status="pending", menu_spec={})
+        sess.add(quote)
         await sess.flush()
-        work_item = WorkItem(
-            job_id=job.id,
+        menu_item = MenuItem(
+            quote_id=quote.id,
             item_name="Cream Sauce",
             category="sauces",
             status="pending",
         )
-        sess.add(work_item)
+        sess.add(menu_item)
         await sess.commit()
-        work_item_id = work_item.id
+        menu_item_id = menu_item.id
 
     mock_output = {
         "name": "heavy cream",
@@ -623,19 +625,19 @@ async def test_resolve_checkpoint(resolution_session_factory):
         await resolve_item(
             ingredients=[ingredient],
             catalog_service=catalog_svc,
-            work_item_id=work_item_id,
+            menu_item_id=menu_item_id,
             session_factory=resolution_session_factory,
         )
 
-    # Checkpoint: work item status (query via fresh session)
+    # Checkpoint: menu item status (query via fresh session)
     async with resolution_session_factory() as sess:
-        wi = await sess.get(WorkItem, work_item_id)
+        mi = await sess.get(MenuItem, menu_item_id)
 
-    assert wi.status == "completed", f"Expected 'completed', got '{wi.status}'"
-    assert wi.step_data is not None
+    assert mi.status == "completed", f"Expected 'completed', got '{mi.status}'"
+    assert mi.step_data is not None
 
     # step_data must contain matches and cost
-    assert "matches" in wi.step_data
-    assert "ingredient_cost_per_unit" in wi.step_data
-    assert len(wi.step_data["matches"]) == 1
-    assert wi.step_data["ingredient_cost_per_unit"] == 5.0
+    assert "matches" in mi.step_data
+    assert "ingredient_cost_per_unit" in mi.step_data
+    assert len(mi.step_data["matches"]) == 1
+    assert mi.step_data["ingredient_cost_per_unit"] == 5.0

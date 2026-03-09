@@ -9,7 +9,7 @@ import pytest_asyncio
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from yes_chef.db.models import Base, Job, WorkItem
+from yes_chef.db.models import Base, Quote, MenuItem
 from yes_chef.decomposition.engine import (
     DecompositionResult,
     decompose_item,
@@ -172,7 +172,7 @@ async def test_fallback_without_exa():
                     "Miniature eggs Benedict on toasted brioche rounds "
                     "with Canadian bacon and hollandaise"
                 ),
-                work_item_id=uuid.uuid4(),
+                menu_item_id=uuid.uuid4(),
                 session_factory=None,  # no DB persistence for this test
             )
 
@@ -190,20 +190,20 @@ async def test_fallback_without_exa():
 
 async def test_checkpoint_writes_to_db(test_session_factory):
     """After decomposition, ingredients are persisted and status is 'decomposed'."""
-    # Create a job and work item (committed so decompose_item's own session sees it)
+    # Create a quote and menu item (committed so decompose_item's own session sees it)
     async with test_session_factory() as sess:
-        job = Job(event="Test Event", status="pending", menu_spec={})
-        sess.add(job)
+        quote = Quote(event="Test Event", status="pending", menu_spec={})
+        sess.add(quote)
         await sess.flush()
-        work_item = WorkItem(
-            job_id=job.id,
+        menu_item = MenuItem(
+            quote_id=quote.id,
             item_name="Eggs Benedict Bites",
             category="appetizers",
             status="pending",
         )
-        sess.add(work_item)
+        sess.add(menu_item)
         await sess.commit()
-        work_item_id = work_item.id
+        menu_item_id = menu_item.id
 
     mock_output = {
         "ingredients": [
@@ -230,7 +230,7 @@ async def test_checkpoint_writes_to_db(test_session_factory):
                     "Miniature eggs Benedict on toasted brioche rounds "
                     "with Canadian bacon and hollandaise"
                 ),
-                work_item_id=work_item_id,
+                menu_item_id=menu_item_id,
                 session_factory=test_session_factory,
             )
 
@@ -240,13 +240,13 @@ async def test_checkpoint_writes_to_db(test_session_factory):
 
     # Verify DB was updated (query via fresh session)
     async with test_session_factory() as sess:
-        wi = await sess.get(WorkItem, work_item_id)
+        mi = await sess.get(MenuItem, menu_item_id)
 
-    assert wi.status == "decomposed", f"Expected status 'decomposed', got '{wi.status}'"
-    assert wi.step_data is not None, "step_data should be populated"
+    assert mi.status == "decomposed", f"Expected status 'decomposed', got '{mi.status}'"
+    assert mi.step_data is not None, "step_data should be populated"
 
     # step_data should contain the ingredients list
-    persisted_ingredients = wi.step_data.get("ingredients", [])
+    persisted_ingredients = mi.step_data.get("ingredients", [])
     assert len(persisted_ingredients) >= 1, "Persisted ingredients must be non-empty"
     first = persisted_ingredients[0]
     assert "name" in first, "Each persisted ingredient must have 'name'"

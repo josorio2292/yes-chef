@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { useJobStatus } from '../api'
-import type { JobStatus } from '../schemas'
+import { useQuoteStatus } from '../api'
+import type { QuoteStatus } from '../schemas'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -219,17 +219,17 @@ function Counter({ value, label, valueColor = 'text-text-primary', glow = false 
 // ── Main View ─────────────────────────────────────────────────────────────────
 
 export default function KitchenView() {
-  const { jobId } = useParams<{ jobId: string }>()
+  const { quoteId } = useParams<{ quoteId: string }>()
   const navigate = useNavigate()
 
-  const [job, setJob] = useState<JobStatus | null>(null)
+  const [job, setJob] = useState<QuoteStatus | null>(null)
   const [connStatus, setConnStatus] = useState<'connecting' | 'live' | 'error' | 'closed'>('connecting')
   const [jobDone, setJobDone] = useState(false)
 
   const sseRef = useRef<EventSource | null>(null)
 
   // TanStack Query polling — used as initial fetch + fallback
-  const { data: queryData } = useJobStatus(jobId ?? '', !!jobId && jobId !== 'demo')
+  const { data: queryData } = useQuoteStatus(quoteId ?? '', !!quoteId && quoteId !== 'demo')
 
   // Merge query data into local state (SSE takes priority for real-time updates)
   useEffect(() => {
@@ -253,9 +253,9 @@ export default function KitchenView() {
 
   // ── SSE ────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!jobId || jobId === 'demo') {
+    if (!quoteId || quoteId === 'demo') {
       setJob({
-        job_id: 'demo',
+        quote_id: 'demo',
         status: 'running',
         total_items: 0,
         completed_items: 0,
@@ -265,7 +265,7 @@ export default function KitchenView() {
       return
     }
 
-    const es = new EventSource(`/api/jobs/${jobId}/stream`)
+    const es = new EventSource(`/api/quotes/${quoteId}/stream`)
     sseRef.current = es
 
     es.addEventListener('open', () => {
@@ -306,7 +306,7 @@ export default function KitchenView() {
       }
     })
 
-    es.addEventListener('job_completed', () => {
+    es.addEventListener('quote_completed', () => {
       setJobDone(true)
       setConnStatus('closed')
       es.close()
@@ -315,7 +315,7 @@ export default function KitchenView() {
     return () => {
       es.close()
     }
-  }, [jobId, applyItemUpdate])
+  }, [quoteId, applyItemUpdate])
 
   // ── Derived state ──────────────────────────────────────────────────────────
   const items = (job?.items ?? []) as JobItem[]
@@ -368,7 +368,7 @@ export default function KitchenView() {
                 <Button
                   variant="outline"
                   className="border-copper text-copper hover:bg-copper-subtle"
-                  onClick={() => navigate(`/pass/${jobId}`)}
+                  onClick={() => navigate(`/pass/${quoteId}`)}
                 >
                   View Quote →
                 </Button>
@@ -387,7 +387,7 @@ export default function KitchenView() {
       >
         {items.length === 0 ? (
           <div className="flex items-center justify-center py-24 text-base text-text-tertiary">
-            {jobId === 'demo'
+            {quoteId === 'demo'
               ? 'Submit a menu to start tracking progress.'
               : 'Loading items…'}
           </div>
@@ -408,7 +408,7 @@ export default function KitchenView() {
       </motion.main>
 
       {/* ── Connection status indicator ── */}
-      {jobId !== 'demo' && (
+      {quoteId !== 'demo' && (
         <div className="fixed bottom-6 right-6 text-[11px] font-medium tracking-[0.04em] px-3 py-2 rounded-sm border border-border-subtle bg-surface-raised shadow-sm text-text-tertiary flex items-center gap-1.5">
           <span
             className={cn(

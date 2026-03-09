@@ -2,9 +2,9 @@
 
 Exposes:
   - GET  /health
-  - POST /jobs                 → 201
-  - GET  /jobs/{job_id}        → 200 | 404
-  - GET  /jobs/{job_id}/quote  → 200 | 404 | 409
+  - POST /quotes                   → 201
+  - GET  /quotes/{quote_id}        → 200 | 404
+  - GET  /quotes/{quote_id}/result → 200 | 404 | 409
 """
 
 import asyncio
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-class JobSubmitRequest(BaseModel):
+class QuoteSubmitRequest(BaseModel):
     event: str
     date: str | None = None
     venue: str | None = None
@@ -39,13 +39,13 @@ class JobSubmitRequest(BaseModel):
     categories: dict  # category name → list of item dicts
 
 
-class JobSubmitResponse(BaseModel):
-    job_id: str
+class QuoteSubmitResponse(BaseModel):
+    quote_id: str
     status: str
 
 
-class JobStatusResponse(BaseModel):
-    job_id: str
+class QuoteStatusResponse(BaseModel):
+    quote_id: str
     status: str
     total_items: int
     completed_items: int
@@ -58,51 +58,51 @@ class JobStatusResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-async def _get_job_with_items(
-    job_id: uuid.UUID,
+async def _get_quote_with_menu_items(
+    quote_id: uuid.UUID,
     session_factory: async_sessionmaker,
 ) -> tuple[Any | None, list[Any]]:
-    """Return (Job, [WorkItem]) or (None, []) if not found."""
-    from yes_chef.db.models import Job, WorkItem
+    """Return (Quote, [MenuItem]) or (None, []) if not found."""
+    from yes_chef.db.models import Quote, MenuItem
 
     async with session_factory() as session:
-        job = await session.get(Job, job_id)
-        if job is None:
+        quote = await session.get(Quote, quote_id)
+        if quote is None:
             return None, []
         result = await session.execute(
-            select(WorkItem).where(WorkItem.job_id == job_id)
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
         )
         items = result.scalars().all()
-        return job, list(items)
+        return quote, list(items)
 
 
-async def _get_job_by_id(
-    job_id: uuid.UUID,
+async def _get_quote_by_id(
+    quote_id: uuid.UUID,
     session_factory: async_sessionmaker,
 ) -> Any | None:
-    """Return Job or None."""
-    from yes_chef.db.models import Job
+    """Return Quote or None."""
+    from yes_chef.db.models import Quote
 
     async with session_factory() as session:
-        return await session.get(Job, job_id)
+        return await session.get(Quote, quote_id)
 
 
-def _build_quote_from_job(job: Any, work_items: list[Any] | None = None) -> dict:
-    """Assemble a quote dict from a completed Job's work items."""
+def _build_quote_from_quote(quote: Any, menu_items: list[Any] | None = None) -> dict:
+    """Assemble a quote dict from a completed Quote's menu items."""
     import datetime
 
-    items = work_items or []
+    items = menu_items or []
     line_items = []
 
-    for wi in items:
-        if wi.status != "completed" or wi.step_data is None:
+    for mi in items:
+        if mi.status != "completed" or mi.step_data is None:
             continue
-        matches = wi.step_data.get("matches", [])
-        cost = wi.step_data.get("ingredient_cost_per_unit", 0.0)
+        matches = mi.step_data.get("matches", [])
+        cost = mi.step_data.get("ingredient_cost_per_unit", 0.0)
         line_items.append(
             {
-                "item_name": wi.item_name,
-                "category": wi.category,
+                "item_name": mi.item_name,
+                "category": mi.category,
                 "ingredients": [
                     {
                         "name": m.get("name", ""),
@@ -119,9 +119,9 @@ def _build_quote_from_job(job: Any, work_items: list[Any] | None = None) -> dict
 
     return {
         "quote_id": str(uuid.uuid4()),
-        "event": job.event,
-        "date": getattr(job, "date", None),
-        "venue": getattr(job, "venue", None),
+        "event": quote.event,
+        "date": getattr(quote, "date", None),
+        "venue": getattr(quote, "venue", None),
         "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "line_items": line_items,
     }
@@ -205,47 +205,47 @@ def create_app(
         return {"status": "ok"}
 
     # ------------------------------------------------------------------
-    # POST /jobs  → 201
+    # POST /quotes  → 201
     # ------------------------------------------------------------------
 
-    @app.post("/jobs", status_code=201, response_model=JobSubmitResponse)
-    async def submit_job(request: JobSubmitRequest) -> JobSubmitResponse:
+    @app.post("/quotes", status_code=201, response_model=QuoteSubmitResponse)
+    async def submit_quote(request: QuoteSubmitRequest) -> QuoteSubmitResponse:
         orch = app.state.orchestrator
         menu_spec = request.model_dump(exclude_none=False)
-        job_id = await orch.submit_job(menu_spec)
+        quote_id = await orch.submit_quote(menu_spec)
 
         # Fire-and-forget background processing
-        asyncio.create_task(_run_processing(orch, job_id))
+        asyncio.create_task(_run_processing(orch, quote_id))
 
-        return JobSubmitResponse(job_id=str(job_id), status="pending")
+        return QuoteSubmitResponse(quote_id=str(quote_id), status="pending")
 
     # ------------------------------------------------------------------
-    # GET /jobs/{job_id}  → 200 | 404
+    # GET /quotes/{quote_id}  → 200 | 404
     # ------------------------------------------------------------------
 
-    @app.get("/jobs/{job_id}", response_model=JobStatusResponse)
-    async def get_job_status(job_id: uuid.UUID) -> JobStatusResponse:
+    @app.get("/quotes/{quote_id}", response_model=QuoteStatusResponse)
+    async def get_quote_status(quote_id: uuid.UUID) -> QuoteStatusResponse:
         sf = app.state.session_factory
-        job, items = await _get_job_with_items(job_id, sf)
-        if job is None:
-            raise HTTPException(status_code=404, detail="Job not found")
+        quote, items = await _get_quote_with_menu_items(quote_id, sf)
+        if quote is None:
+            raise HTTPException(status_code=404, detail="Quote not found")
 
         total = len(items)
-        completed = sum(1 for wi in items if wi.status == "completed")
-        failed = sum(1 for wi in items if wi.status == "failed")
+        completed = sum(1 for mi in items if mi.status == "completed")
+        failed = sum(1 for mi in items if mi.status == "failed")
 
         item_summaries = [
             {
-                "item_name": wi.item_name,
-                "step": wi.status,
-                "status": wi.status,
+                "item_name": mi.item_name,
+                "step": mi.status,
+                "status": mi.status,
             }
-            for wi in items
+            for mi in items
         ]
 
-        return JobStatusResponse(
-            job_id=str(job.id),
-            status=job.status,
+        return QuoteStatusResponse(
+            quote_id=str(quote.id),
+            status=quote.status,
             total_items=total,
             completed_items=completed,
             failed_items=failed,
@@ -253,51 +253,51 @@ def create_app(
         )
 
     # ------------------------------------------------------------------
-    # GET /jobs/{job_id}/quote  → 200 | 404 | 409
+    # GET /quotes/{quote_id}/result  → 200 | 404 | 409
     # ------------------------------------------------------------------
 
-    @app.get("/jobs/{job_id}/quote")
-    async def get_quote(job_id: uuid.UUID) -> dict:
+    @app.get("/quotes/{quote_id}/result")
+    async def get_result(quote_id: uuid.UUID) -> dict:
         sf = app.state.session_factory
-        job = await _get_job_by_id(job_id, sf)
-        if job is None:
-            raise HTTPException(status_code=404, detail="Job not found")
+        quote = await _get_quote_by_id(quote_id, sf)
+        if quote is None:
+            raise HTTPException(status_code=404, detail="Quote not found")
 
-        if job.status not in ("completed", "completed_with_errors"):
+        if quote.status not in ("completed", "completed_with_errors"):
             raise HTTPException(
                 status_code=409,
-                detail=f"Quote not ready — job status is '{job.status}'",
+                detail=f"Quote not ready — quote status is '{quote.status}'",
             )
 
-        _, items = await _get_job_with_items(job_id, sf)
-        quote = _build_quote_from_job(job, items)
-        return quote
+        _, items = await _get_quote_with_menu_items(quote_id, sf)
+        result = _build_quote_from_quote(quote, items)
+        return result
 
     # ------------------------------------------------------------------
-    # GET /jobs/{job_id}/stream  → 200 text/event-stream | 404
+    # GET /quotes/{quote_id}/stream  → 200 text/event-stream | 404
     # ------------------------------------------------------------------
 
-    @app.get("/jobs/{job_id}/stream")
-    async def stream_events(job_id: uuid.UUID) -> StreamingResponse:
+    @app.get("/quotes/{quote_id}/stream")
+    async def stream_events(quote_id: uuid.UUID) -> StreamingResponse:
         sf = app.state.session_factory
-        job = await _get_job_by_id(job_id, sf)
-        if job is None:
-            raise HTTPException(status_code=404, detail="Job not found")
+        quote = await _get_quote_by_id(quote_id, sf)
+        if quote is None:
+            raise HTTPException(status_code=404, detail="Quote not found")
 
         bus: EventBus = app.state.event_bus
-        queue = bus.subscribe(str(job_id))
+        queue = bus.subscribe(str(quote_id))
 
         async def event_generator():
             # Send a connection confirmation event first
-            yield f"event: connected\ndata: {json.dumps({'job_id': str(job_id)})}\n\n"
+            yield f"event: connected\ndata: {json.dumps({'quote_id': str(quote_id)})}\n\n"
             try:
                 while True:
                     event = await queue.get()
                     yield f"event: {event.event}\ndata: {json.dumps(event.data)}\n\n"
-                    if event.event == "job_completed":
+                    if event.event == "quote_completed":
                         break
             finally:
-                bus.unsubscribe(str(job_id), queue)
+                bus.unsubscribe(str(quote_id), queue)
 
         return StreamingResponse(
             event_generator(),
@@ -312,12 +312,12 @@ def create_app(
 # ---------------------------------------------------------------------------
 
 
-async def _run_processing(orchestrator: Any, job_id: uuid.UUID) -> None:
+async def _run_processing(orchestrator: Any, quote_id: uuid.UUID) -> None:
     """Run the orchestrator pipeline in the background."""
     try:
-        await orchestrator.process_job(job_id)
+        await orchestrator.process_quote(quote_id)
     except Exception:
-        logger.exception("Background processing failed for job %s", job_id)
+        logger.exception("Background processing failed for quote %s", quote_id)
 
 
 # ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from yes_chef.catalog.provider import ItemNotFoundError
 from yes_chef.catalog.service import CatalogService
-from yes_chef.db.models import IngredientCache, WorkItem
+from yes_chef.db.models import IngredientCache, MenuItem
 from yes_chef.decomposition.engine import Ingredient
 
 # Type alias for an async session factory
@@ -284,7 +284,7 @@ async def resolve_from_cache(
 async def resolve_item(
     ingredients: list[Ingredient],
     catalog_service: CatalogService,
-    work_item_id: UUID,
+    menu_item_id: UUID,
     session_factory: SessionFactory,
 ) -> ResolveResult:
     """Resolve all ingredients to catalog items.
@@ -387,13 +387,13 @@ async def resolve_item(
     # Checkpoint: update work item in a short-lived session
     async with session_factory() as session:
         async with session.begin():
-            stmt = select(WorkItem).where(WorkItem.id == work_item_id)
+            stmt = select(MenuItem).where(MenuItem.id == menu_item_id)
             db_result = await session.execute(stmt)
-            work_item = db_result.scalar_one_or_none()
+            menu_item = db_result.scalar_one_or_none()
 
-            if work_item is not None:
-                work_item.status = "completed"
-                work_item.step_data = {
+            if menu_item is not None:
+                menu_item.status = "completed"
+                menu_item.step_data = {
                     "matches": [m.model_dump() for m in matches],
                     "ingredient_cost_per_unit": cost,
                 }

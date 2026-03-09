@@ -8,9 +8,8 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<SubmitView />} />
-        <Route path="/kitchen/:jobId" element={<KitchenView />} />
-        <Route path="/pass/:jobId" element={<PassView />} />
-        <Route path="/quote/:jobId" element={<PassView />} />
+        <Route path="/kitchen/:quoteId" element={<KitchenView />} />
+        <Route path="/pass/:quoteId" element={<PassView />} />
       </Routes>
     </BrowserRouter>
   )

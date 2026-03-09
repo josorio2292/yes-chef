@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import select
 
 from yes_chef.catalog.service import CatalogService
-from yes_chef.db.models import Job, WorkItem
+from yes_chef.db.models import MenuItem, Quote
 from yes_chef.decomposition.engine import (
     DecompositionResult,
     Ingredient,
@@ -38,7 +38,7 @@ ResolveFn = Callable[
 class Orchestrator:
     """Sequential pipeline orchestrator.
 
-    Accepts a menu spec, creates a Job + WorkItems, and processes each
+    Accepts a menu spec, creates a Quote + MenuItems, and processes each
     item through decomposition → resolution with checkpointing.
     Supports resumability: completed/decomposed/resolving items pick up
     where they left off without restarting from scratch.
@@ -64,13 +64,13 @@ class Orchestrator:
     # Public API
     # ------------------------------------------------------------------
 
-    async def submit_job(self, menu_spec: dict) -> uuid.UUID:
-        """Create a Job and one WorkItem per menu item.
+    async def submit_quote(self, menu_spec: dict) -> uuid.UUID:
+        """Create a Quote and one MenuItem per menu item.
 
-        Returns the job UUID.
+        Returns the quote UUID.
         """
         async with self._session_factory() as session:
-            job = Job(
+            quote = Quote(
                 event=menu_spec.get("event", ""),
                 date=menu_spec.get("date"),
                 venue=menu_spec.get("venue"),
@@ -79,65 +79,65 @@ class Orchestrator:
                 status="pending",
                 menu_spec=menu_spec,
             )
-            session.add(job)
+            session.add(quote)
             await session.flush()
 
             categories: dict = menu_spec.get("categories", {})
             for category_name, items in categories.items():
                 for item in items:
-                    work_item = WorkItem(
-                        job_id=job.id,
+                    menu_item = MenuItem(
+                        quote_id=quote.id,
                         item_name=item["name"],
                         category=category_name,
                         status="pending",
                     )
-                    session.add(work_item)
+                    session.add(menu_item)
 
             await session.commit()
-            return job.id
+            return quote.id
 
-    async def process_job(self, job_id: uuid.UUID) -> dict:
-        """Process all work items for a job and return the assembled quote.
+    async def process_quote(self, quote_id: uuid.UUID) -> dict:
+        """Process all menu items for a quote and return the assembled quote.
 
         Processing is sequential. Failed items do not block others.
         Completed/decomposed/resolving items are resumed from their last
         checkpoint.
         """
-        # Mark job as processing
+        # Mark quote as processing
         async with self._session_factory() as session:
-            job = await session.get(Job, job_id)
-            if job is None:
-                raise ValueError(f"Job {job_id} not found")
-            job.status = "processing"
+            quote = await session.get(Quote, quote_id)
+            if quote is None:
+                raise ValueError(f"Quote {quote_id} not found")
+            quote.status = "processing"
             await session.commit()
 
-        # Load work items
+        # Load menu items
         async with self._session_factory() as session:
             result = await session.execute(
-                select(WorkItem).where(WorkItem.job_id == job_id)
+                select(MenuItem).where(MenuItem.quote_id == quote_id)
             )
-            work_items = result.scalars().all()
+            menu_items = result.scalars().all()
 
         # Separate already-completed items (skip reprocessing) from pending ones
         completed_items: list[dict] = []
         failed_count = 0
 
-        for work_item in work_items:
-            if work_item.status == "completed":
-                line_item = self._line_item_from_step_data(work_item)
+        for menu_item in menu_items:
+            if menu_item.status == "completed":
+                line_item = self._line_item_from_step_data(menu_item)
                 if line_item is not None:
                     completed_items.append(line_item)
 
-        pending_items = [wi for wi in work_items if wi.status != "completed"]
+        pending_items = [mi for mi in menu_items if mi.status != "completed"]
 
         # Process pending items concurrently, bounded by the semaphore
         semaphore = asyncio.Semaphore(self._max_concurrent)
 
-        async def process_with_semaphore(work_item: WorkItem) -> dict | None:
+        async def process_with_semaphore(menu_item: MenuItem) -> dict | None:
             async with semaphore:
-                return await self._process_item(work_item, job_id)
+                return await self._process_item(menu_item, quote_id)
 
-        tasks = [process_with_semaphore(wi) for wi in pending_items]
+        tasks = [process_with_semaphore(mi) for mi in pending_items]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for result in results:
@@ -154,70 +154,70 @@ class Orchestrator:
 
         # Assemble quote
         async with self._session_factory() as session:
-            job = await session.get(Job, job_id)
-            quote = self._assemble_quote(job, completed_items)
+            quote = await session.get(Quote, quote_id)
+            assembled_quote = self._assemble_quote(quote, completed_items)
 
-            # Mark job done
+            # Mark quote done
             if failed_count > 0:
-                job.status = "completed_with_errors"
+                quote.status = "completed_with_errors"
             else:
-                job.status = "completed"
+                quote.status = "completed"
             await session.commit()
 
         await self._publish(
-            str(job_id),
+            str(quote_id),
             SSEEvent(
-                event="job_completed",
+                event="quote_completed",
                 data={
-                    "job_id": str(job_id),
+                    "quote_id": str(quote_id),
                     "timestamp": _now_iso(),
                 },
             ),
         )
 
-        return quote
+        return assembled_quote
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     async def _process_item(
-        self, work_item: WorkItem, job_id: uuid.UUID | None = None
+        self, menu_item: MenuItem, quote_id: uuid.UUID | None = None
     ) -> dict | None:
-        """Process a single WorkItem through decompose → resolve.
+        """Process a single MenuItem through decompose → resolve.
 
         Returns a line item dict on success, None on failure.
         Checkpoints status at each stage.
         """
-        item_id = work_item.id
-        item_name = work_item.item_name
-        category = work_item.category
-        job_id_str = str(job_id) if job_id is not None else str(work_item.job_id)
+        item_id = menu_item.id
+        item_name = menu_item.item_name
+        category = menu_item.category
+        quote_id_str = str(quote_id) if quote_id is not None else str(menu_item.quote_id)
 
         try:
             # ----------------------------------------------------------------
             # Decomposition stage
             # Skipped if item is already "decomposed" or "resolving"
             # ----------------------------------------------------------------
-            if work_item.status in ("pending", "decomposing"):
+            if menu_item.status in ("pending", "decomposing"):
                 logger.info("Decomposing: %s", item_name)
-                # Find item description from menu spec via the job (not needed here
-                # because the work item doesn't store it separately; use item_name)
-                # The work item doesn't store description — we need to fetch from job
+                # Find item description from menu spec via the quote (not needed here
+                # because the menu item doesn't store it separately; use item_name)
+                # The menu item doesn't store description — we need to fetch from quote
                 description = await self._get_item_description(item_id)
 
                 async with self._session_factory() as session:
                     # Mark as decomposing
-                    wi = await session.get(WorkItem, item_id)
-                    wi.status = "decomposing"
+                    mi = await session.get(MenuItem, item_id)
+                    mi.status = "decomposing"
                     await session.commit()
 
                 await self._publish(
-                    job_id_str,
+                    quote_id_str,
                     SSEEvent(
                         event="item_step_change",
                         data={
-                            "job_id": job_id_str,
+                            "quote_id": quote_id_str,
                             "item_name": item_name,
                             "status": "decomposing",
                             "timestamp": _now_iso(),
@@ -234,9 +234,9 @@ class Orchestrator:
                 # Checkpoint: status → "decomposed", step_data has ingredients.
                 # Opens a short-lived session after the LLM call has returned.
                 async with self._session_factory() as session:
-                    wi = await session.get(WorkItem, item_id)
-                    wi.status = "decomposed"
-                    wi.step_data = {
+                    mi = await session.get(MenuItem, item_id)
+                    mi.status = "decomposed"
+                    mi.step_data = {
                         "ingredients": [
                             {"name": ing.name, "quantity": ing.quantity}
                             for ing in decomp_result.ingredients
@@ -249,9 +249,9 @@ class Orchestrator:
             else:
                 # "decomposed" or "resolving": load ingredients from step_data
                 logger.info(
-                    "Resuming from checkpoint '%s': %s", work_item.status, item_name
+                    "Resuming from checkpoint '%s': %s", menu_item.status, item_name
                 )
-                raw = (work_item.step_data or {}).get("ingredients", [])
+                raw = (menu_item.step_data or {}).get("ingredients", [])
                 ingredients = [
                     Ingredient(name=ing["name"], quantity=ing["quantity"])
                     for ing in raw
@@ -264,16 +264,16 @@ class Orchestrator:
 
             async with self._session_factory() as session:
                 # Mark as resolving
-                wi = await session.get(WorkItem, item_id)
-                wi.status = "resolving"
+                mi = await session.get(MenuItem, item_id)
+                mi.status = "resolving"
                 await session.commit()
 
             await self._publish(
-                job_id_str,
+                quote_id_str,
                 SSEEvent(
                     event="item_step_change",
                     data={
-                        "job_id": job_id_str,
+                        "quote_id": quote_id_str,
                         "item_name": item_name,
                         "status": "resolving",
                         "timestamp": _now_iso(),
@@ -290,20 +290,20 @@ class Orchestrator:
             # Checkpoint: status → "completed", step_data has matches + cost.
             # Opens a short-lived session after the LLM call has returned.
             async with self._session_factory() as session:
-                wi = await session.get(WorkItem, item_id)
-                wi.status = "completed"
-                wi.step_data = {
+                mi = await session.get(MenuItem, item_id)
+                mi.status = "completed"
+                mi.step_data = {
                     "matches": [m.model_dump() for m in resolve_result.matches],
                     "ingredient_cost_per_unit": resolve_result.ingredient_cost_per_unit,
                 }
                 await session.commit()
 
             await self._publish(
-                job_id_str,
+                quote_id_str,
                 SSEEvent(
                     event="item_completed",
                     data={
-                        "job_id": job_id_str,
+                        "quote_id": quote_id_str,
                         "item_name": item_name,
                         "data": {
                             "ingredient_cost_per_unit": (
@@ -335,17 +335,17 @@ class Orchestrator:
         except Exception as exc:
             logger.error("Failed processing item %s: %s", item_name, exc)
             async with self._session_factory() as session:
-                wi = await session.get(WorkItem, item_id)
-                if wi is not None:
-                    wi.status = "failed"
-                    wi.error = str(exc)
+                mi = await session.get(MenuItem, item_id)
+                if mi is not None:
+                    mi.status = "failed"
+                    mi.error = str(exc)
                     await session.commit()
             await self._publish(
-                job_id_str,
+                quote_id_str,
                 SSEEvent(
                     event="item_failed",
                     data={
-                        "job_id": job_id_str,
+                        "quote_id": quote_id_str,
                         "item_name": item_name,
                         "error": str(exc),
                         "timestamp": _now_iso(),
@@ -354,39 +354,39 @@ class Orchestrator:
             )
             return None
 
-    async def _publish(self, job_id: str, event: SSEEvent) -> None:
+    async def _publish(self, quote_id: str, event: SSEEvent) -> None:
         """Publish an event to the event bus if one is configured."""
         if self._event_bus is not None:
-            await self._event_bus.publish(job_id, event)
+            await self._event_bus.publish(quote_id, event)
 
-    async def _get_item_description(self, work_item_id: uuid.UUID) -> str:
-        """Fetch the item description from the job's menu_spec."""
+    async def _get_item_description(self, menu_item_id: uuid.UUID) -> str:
+        """Fetch the item description from the quote's menu_spec."""
         async with self._session_factory() as session:
-            wi = await session.get(WorkItem, work_item_id)
-            if wi is None:
+            mi = await session.get(MenuItem, menu_item_id)
+            if mi is None:
                 return ""
-            job = await session.get(Job, wi.job_id)
-            if job is None or job.menu_spec is None:
+            quote = await session.get(Quote, mi.quote_id)
+            if quote is None or quote.menu_spec is None:
                 return ""
 
-            categories = job.menu_spec.get("categories", {})
+            categories = quote.menu_spec.get("categories", {})
             for items in categories.values():
                 for item in items:
-                    if item.get("name") == wi.item_name:
+                    if item.get("name") == mi.item_name:
                         return item.get("description", "")
             return ""
 
-    def _line_item_from_step_data(self, work_item: WorkItem) -> dict | None:
-        """Build a line item dict from a completed work item's step_data."""
-        if work_item.step_data is None:
+    def _line_item_from_step_data(self, menu_item: MenuItem) -> dict | None:
+        """Build a line item dict from a completed menu item's step_data."""
+        if menu_item.step_data is None:
             return None
 
-        matches = work_item.step_data.get("matches", [])
-        cost = work_item.step_data.get("ingredient_cost_per_unit", 0.0)
+        matches = menu_item.step_data.get("matches", [])
+        cost = menu_item.step_data.get("ingredient_cost_per_unit", 0.0)
 
         return {
-            "item_name": work_item.item_name,
-            "category": work_item.category,
+            "item_name": menu_item.item_name,
+            "category": menu_item.category,
             "ingredients": [
                 {
                     "name": m.get("name", ""),
@@ -400,13 +400,13 @@ class Orchestrator:
             "ingredient_cost_per_unit": cost,
         }
 
-    def _assemble_quote(self, job: Job, completed_items: list[dict]) -> dict:
+    def _assemble_quote(self, quote: Quote, completed_items: list[dict]) -> dict:
         """Assemble the quote dict conforming to quote_schema.json structure."""
         return {
             "quote_id": str(uuid.uuid4()),
-            "event": job.event,
-            "date": job.date,
-            "venue": job.venue,
+            "event": quote.event,
+            "date": quote.date,
+            "venue": quote.venue,
             "generated_at": datetime.now(UTC).isoformat(),
             "line_items": completed_items,
         }

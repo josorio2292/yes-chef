@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import type { KeyboardEvent, SVGProps } from 'react'
 import { motion } from 'motion/react'
-import { useQuote } from '../api'
+import { useQuoteResult } from '../api'
 import type { Quote, LineItem, Ingredient } from '../schemas'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -258,8 +258,8 @@ function exportQuote(quote: Quote): void {
 /* ─── Pass View ────────────────────────────────────────────────────────────── */
 
 export default function PassView() {
-  const { jobId } = useParams<{ jobId: string }>()
-  const { data: quote, isLoading, error } = useQuote(jobId ?? '', !!jobId)
+  const { quoteId } = useParams<{ quoteId: string }>()
+  const { data: quote, isLoading, error } = useQuoteResult(quoteId ?? '', !!quoteId)
 
   /* ── Loading ── */
   if (isLoading) {

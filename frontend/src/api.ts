@@ -1,32 +1,32 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { jobStatusSchema } from './schemas'
-import { jobSubmitResponseSchema } from './schemas'
+import { quoteStatusSchema } from './schemas'
+import { quoteSubmitResponseSchema } from './schemas'
 import { quoteSchema } from './schemas'
 import type { MenuSpec } from './schemas'
 
 const BASE = '/api'
 
-export function useSubmitJob() {
+export function useSubmitQuote() {
   return useMutation({
     mutationFn: async (spec: MenuSpec) => {
-      const res = await fetch(`${BASE}/jobs`, {
+      const res = await fetch(`${BASE}/quotes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(spec),
       })
       if (!res.ok) throw new Error(`Submit failed: ${res.status}`)
-      return jobSubmitResponseSchema.parse(await res.json())
+      return quoteSubmitResponseSchema.parse(await res.json())
     },
   })
 }
 
-export function useJobStatus(jobId: string, enabled = true) {
+export function useQuoteStatus(quoteId: string, enabled = true) {
   return useQuery({
-    queryKey: ['job', jobId],
+    queryKey: ['quoteStatus', quoteId],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/jobs/${jobId}`)
+      const res = await fetch(`${BASE}/quotes/${quoteId}`)
       if (!res.ok) throw new Error(`Status fetch failed: ${res.status}`)
-      return jobStatusSchema.parse(await res.json())
+      return quoteStatusSchema.parse(await res.json())
     },
     enabled,
     refetchInterval: (query) => {
@@ -37,11 +37,11 @@ export function useJobStatus(jobId: string, enabled = true) {
   })
 }
 
-export function useQuote(jobId: string, enabled = true) {
+export function useQuoteResult(quoteId: string, enabled = true) {
   return useQuery({
-    queryKey: ['quote', jobId],
+    queryKey: ['quoteResult', quoteId],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/jobs/${jobId}/quote`)
+      const res = await fetch(`${BASE}/quotes/${quoteId}/result`)
       if (!res.ok) throw new Error(`Quote fetch failed: ${res.status}`)
       return quoteSchema.parse(await res.json())
     },

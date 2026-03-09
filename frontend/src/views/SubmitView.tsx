@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'motion/react'
 import { menuSpecSchema } from '../schemas'
-import { useSubmitJob } from '../api'
+import { useSubmitQuote } from '../api'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -56,7 +56,7 @@ function parseCategorySummary(json: unknown): ParseSummary[] {
 export default function SubmitView() {
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const submitJob = useSubmitJob()
+  const submitQuote = useSubmitQuote()
 
   // Event details
   const [eventName, setEventName] = useState('')
@@ -164,15 +164,15 @@ export default function SubmitView() {
     }
 
     try {
-      const data = await submitJob.mutateAsync(validation.data)
-      navigate(`/kitchen/${data.job_id}`)
+      const data = await submitQuote.mutateAsync(validation.data)
+      navigate(`/kitchen/${data.quote_id}`)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong.'
       setSubmitError(message)
     }
   }
 
-  const submitting = submitJob.isPending
+  const submitting = submitQuote.isPending
 
   // ── Render ───────────────────────────────────────────────
 

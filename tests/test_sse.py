@@ -1,4 +1,4 @@
-"""Tests for SSE streaming endpoint: GET /jobs/{id}/stream."""
+"""Tests for SSE streaming endpoint: GET /quotes/{id}/stream."""
 
 import asyncio
 import json
@@ -46,8 +46,8 @@ def sse_session_factory(sse_engine):
 @pytest.fixture()
 def mock_orchestrator():
     orch = MagicMock()
-    orch.submit_job = AsyncMock(return_value=uuid.uuid4())
-    orch.process_job = AsyncMock()
+    orch.submit_quote = AsyncMock(return_value=uuid.uuid4())
+    orch.process_quote = AsyncMock()
     return orch
 
 
@@ -75,41 +75,41 @@ def _make_app_with_state(orchestrator, session_factory, event_bus=None):
 
 @pytest.mark.asyncio
 async def test_sse_stream_content_type(sse_session_factory, mock_orchestrator):
-    """GET /jobs/{id}/stream for existing job → 200, Content-Type: text/event-stream."""
-    from yes_chef.db.models import Job
+    """GET /quotes/{id}/stream for existing quote → 200, Content-Type: text/event-stream."""
+    from yes_chef.db.models import Quote
     from yes_chef.events import EventBus
 
-    # Create a real job in the DB
+    # Create a real quote in the DB
     async with sse_session_factory() as session:
-        job = Job(
+        quote = Quote(
             event="Test Event",
             status="processing",
             menu_spec={},
         )
-        session.add(job)
+        session.add(quote)
         await session.commit()
-        job_id = job.id
+        quote_id = quote.id
 
     event_bus = EventBus()
     app = _make_app_with_state(mock_orchestrator, sse_session_factory, event_bus)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        # Publish job_completed in background so stream closes
+        # Publish quote_completed in background so stream closes
         async def close_stream():
             await asyncio.sleep(0.1)
             from yes_chef.events import SSEEvent
 
             await event_bus.publish(
-                str(job_id),
+                str(quote_id),
                 SSEEvent(
-                    event="job_completed",
-                    data={"job_id": str(job_id), "timestamp": "t"},
+                    event="quote_completed",
+                    data={"quote_id": str(quote_id), "timestamp": "t"},
                 ),
             )
 
         close_task = asyncio.create_task(close_stream())
-        async with client.stream("GET", f"/jobs/{job_id}/stream") as response:
+        async with client.stream("GET", f"/quotes/{quote_id}/stream") as response:
             assert response.status_code == 200
             assert "text/event-stream" in response.headers["content-type"]
             # Drain the stream so it closes cleanly
@@ -126,19 +126,19 @@ async def test_sse_stream_content_type(sse_session_factory, mock_orchestrator):
 @pytest.mark.asyncio
 async def test_sse_stream_receives_events(sse_session_factory, mock_orchestrator):
     """Publish events to event bus → SSE client receives them in correct format."""
-    from yes_chef.db.models import Job
+    from yes_chef.db.models import Quote
     from yes_chef.events import EventBus, SSEEvent
 
-    # Create a real job in the DB
+    # Create a real quote in the DB
     async with sse_session_factory() as session:
-        job = Job(
+        quote = Quote(
             event="Test Event",
             status="processing",
             menu_spec={},
         )
-        session.add(job)
+        session.add(quote)
         await session.commit()
-        job_id = job.id
+        quote_id = quote.id
 
     event_bus = EventBus()
     app = _make_app_with_state(mock_orchestrator, sse_session_factory, event_bus)
@@ -149,11 +149,11 @@ async def test_sse_stream_receives_events(sse_session_factory, mock_orchestrator
         # Give the client time to connect and subscribe
         await asyncio.sleep(0.1)
         await event_bus.publish(
-            str(job_id),
+            str(quote_id),
             SSEEvent(
                 event="item_step_change",
                 data={
-                    "job_id": str(job_id),
+                    "quote_id": str(quote_id),
                     "item_name": "Test Item",
                     "status": "decomposing",
                     "timestamp": "2025-01-01T00:00:00+00:00",
@@ -162,11 +162,11 @@ async def test_sse_stream_receives_events(sse_session_factory, mock_orchestrator
         )
         await asyncio.sleep(0.05)
         await event_bus.publish(
-            str(job_id),
+            str(quote_id),
             SSEEvent(
-                event="job_completed",
+                event="quote_completed",
                 data={
-                    "job_id": str(job_id),
+                    "quote_id": str(quote_id),
                     "timestamp": "2025-01-01T00:00:01+00:00",
                 },
             ),
@@ -176,7 +176,7 @@ async def test_sse_stream_receives_events(sse_session_factory, mock_orchestrator
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         # Start publishing in the background
         publish_task = asyncio.create_task(publish_and_complete())
-        async with client.stream("GET", f"/jobs/{job_id}/stream") as response:
+        async with client.stream("GET", f"/quotes/{quote_id}/stream") as response:
             assert response.status_code == 200
             async for line in response.aiter_lines():
                 if line.startswith("event:"):
@@ -187,30 +187,30 @@ async def test_sse_stream_receives_events(sse_session_factory, mock_orchestrator
                     )
         await publish_task
 
-    # Should have received at least the item_step_change and job_completed events
+    # Should have received at least the item_step_change and quote_completed events
     event_types = [e["event"] for e in received_events]
     assert "item_step_change" in event_types
-    assert "job_completed" in event_types
+    assert "quote_completed" in event_types
 
     # Verify item_step_change event has correct data
     step_event = next(e for e in received_events if e["event"] == "item_step_change")
-    assert step_event["data"]["job_id"] == str(job_id)
+    assert step_event["data"]["quote_id"] == str(quote_id)
     assert step_event["data"]["item_name"] == "Test Item"
     assert step_event["data"]["status"] == "decomposing"
 
 
 # ---------------------------------------------------------------------------
-# test_sse_job_not_found
+# test_sse_quote_not_found
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_sse_job_not_found(sse_session_factory, mock_orchestrator):
-    """GET /jobs/{random_uuid}/stream → 404."""
+async def test_sse_quote_not_found(sse_session_factory, mock_orchestrator):
+    """GET /quotes/{random_uuid}/stream → 404."""
     random_id = uuid.uuid4()
     app = _make_app_with_state(mock_orchestrator, sse_session_factory)
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(f"/jobs/{random_id}/stream")
+        response = await client.get(f"/quotes/{random_id}/stream")
         assert response.status_code == 404

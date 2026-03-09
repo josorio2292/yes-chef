@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom'
 
 export default function KitchenViewPlaceholder() {
-  const { jobId } = useParams()
+  const { quoteId } = useParams()
   return (
     <div
       style={{
@@ -15,7 +15,7 @@ export default function KitchenViewPlaceholder() {
         fontSize: 'var(--font-size-body)',
       }}
     >
-      Kitchen View — Task 11 — Job: {jobId}
+      Kitchen View — Task 11 — Quote: {quoteId}
     </div>
   )
 }

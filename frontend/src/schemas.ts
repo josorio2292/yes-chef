@@ -19,24 +19,24 @@ export const menuSpecSchema = z.object({
   ),
 })
 
-export const jobSubmitResponseSchema = z.object({
-  job_id: z.string().uuid(),
+export const quoteSubmitResponseSchema = z.object({
+  quote_id: z.string().uuid(),
   status: z.string(),
 })
 
-export const jobStatusItemSchema = z.object({
+export const quoteStatusItemSchema = z.object({
   item_name: z.string(),
   step: z.string(),
   status: z.string(),
 })
 
-export const jobStatusSchema = z.object({
-  job_id: z.string(),
+export const quoteStatusSchema = z.object({
+  quote_id: z.string(),
   status: z.string(),
   total_items: z.number(),
   completed_items: z.number(),
   failed_items: z.number(),
-  items: z.array(jobStatusItemSchema),
+  items: z.array(quoteStatusItemSchema),
 })
 
 export const ingredientSchema = z.object({
@@ -64,8 +64,8 @@ export const quoteSchema = z.object({
 })
 
 export type MenuSpec = z.infer<typeof menuSpecSchema>
-export type JobSubmitResponse = z.infer<typeof jobSubmitResponseSchema>
-export type JobStatus = z.infer<typeof jobStatusSchema>
+export type QuoteSubmitResponse = z.infer<typeof quoteSubmitResponseSchema>
+export type QuoteStatus = z.infer<typeof quoteStatusSchema>
 export type Quote = z.infer<typeof quoteSchema>
 export type LineItem = z.infer<typeof lineItemSchema>
 export type Ingredient = z.infer<typeof ingredientSchema>

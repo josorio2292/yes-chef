@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from yes_chef.catalog.service import CatalogService
-from yes_chef.db.models import Base, Job, WorkItem
+from yes_chef.db.models import Base, Quote, MenuItem
 from yes_chef.decomposition.engine import DecompositionResult, Ingredient
 from yes_chef.resolution.engine import IngredientMatch, ResolveResult
 
@@ -119,12 +119,12 @@ async def db_session(orch_session_factory):
 
 
 # ---------------------------------------------------------------------------
-# test_submit_job_creates_work_items
+# test_submit_quote_creates_menu_items
 # ---------------------------------------------------------------------------
 
 
-async def test_submit_job_creates_work_items(orch_session_factory):
-    """Submit a menu spec → Job created (pending), 3 WorkItems created (pending)."""
+async def test_submit_quote_creates_menu_items(orch_session_factory):
+    """Submit a menu spec → Quote created (pending), 3 MenuItems created (pending)."""
     from yes_chef.orchestrator.engine import Orchestrator
 
     orch = Orchestrator(
@@ -134,20 +134,22 @@ async def test_submit_job_creates_work_items(orch_session_factory):
         resolve_fn=make_mock_resolve_fn(),
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_3_ITEMS)
+    quote_id = await orch.submit_quote(MENU_SPEC_3_ITEMS)
 
-    assert job_id is not None
-    assert isinstance(job_id, uuid.UUID)
+    assert quote_id is not None
+    assert isinstance(quote_id, uuid.UUID)
 
     async with orch_session_factory() as sess:
-        job = await sess.get(Job, job_id)
-        assert job is not None
-        assert job.status == "pending"
-        assert job.event == "Test Wedding"
-        assert job.date == "2025-09-20"
-        assert job.venue == "The Grand Hall"
+        quote = await sess.get(Quote, quote_id)
+        assert quote is not None
+        assert quote.status == "pending"
+        assert quote.event == "Test Wedding"
+        assert quote.date == "2025-09-20"
+        assert quote.venue == "The Grand Hall"
 
-        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        result = await sess.execute(
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
+        )
         items = result.scalars().all()
         assert len(items) == 3
 
@@ -165,12 +167,12 @@ async def test_submit_job_creates_work_items(orch_session_factory):
 
 
 # ---------------------------------------------------------------------------
-# test_process_job_all_complete
+# test_process_quote_all_complete
 # ---------------------------------------------------------------------------
 
 
-async def test_process_job_all_complete(orch_session_factory):
-    """Process a job; all 3 items should reach 'completed', job status 'completed'."""
+async def test_process_quote_all_complete(orch_session_factory):
+    """Process a quote; all 3 items should reach 'completed', quote status 'completed'."""
     from yes_chef.orchestrator.engine import Orchestrator
 
     decompose_fn = make_mock_decompose_fn()
@@ -183,14 +185,16 @@ async def test_process_job_all_complete(orch_session_factory):
         resolve_fn=resolve_fn,
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_3_ITEMS)
-    await orch.process_job(job_id)
+    quote_id = await orch.submit_quote(MENU_SPEC_3_ITEMS)
+    await orch.process_quote(quote_id)
 
     async with orch_session_factory() as sess:
-        job = await sess.get(Job, job_id)
-        assert job.status == "completed"
+        quote = await sess.get(Quote, quote_id)
+        assert quote.status == "completed"
 
-        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        result = await sess.execute(
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
+        )
         items = result.scalars().all()
         assert len(items) == 3
 
@@ -206,11 +210,11 @@ async def test_process_job_all_complete(orch_session_factory):
 
 
 # ---------------------------------------------------------------------------
-# test_process_job_produces_quote
+# test_process_quote_produces_quote
 # ---------------------------------------------------------------------------
 
 
-async def test_process_job_produces_quote(orch_session_factory):
+async def test_process_quote_produces_quote(orch_session_factory):
     """Quote output has the right structure and includes all items."""
     from yes_chef.orchestrator.engine import Orchestrator
 
@@ -221,8 +225,8 @@ async def test_process_job_produces_quote(orch_session_factory):
         resolve_fn=make_mock_resolve_fn(unit_cost=10.0),
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_3_ITEMS)
-    quote = await orch.process_job(job_id)
+    quote_id = await orch.submit_quote(MENU_SPEC_3_ITEMS)
+    quote = await orch.process_quote(quote_id)
 
     assert "quote_id" in quote
     assert quote["event"] == "Test Wedding"
@@ -265,7 +269,7 @@ async def test_item_failure_doesnt_block_others(orch_session_factory):
 
     call_count = 0
 
-    async def failing_decompose(item_name, item_description, work_item_id, session):
+    async def failing_decompose(item_name, item_description, menu_item_id, session):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -283,11 +287,13 @@ async def test_item_failure_doesnt_block_others(orch_session_factory):
         resolve_fn=resolve_fn,
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_3_ITEMS)
-    await orch.process_job(job_id)
+    quote_id = await orch.submit_quote(MENU_SPEC_3_ITEMS)
+    await orch.process_quote(quote_id)
 
     async with orch_session_factory() as sess:
-        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        result = await sess.execute(
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
+        )
         items = result.scalars().all()
         assert len(items) == 3
 
@@ -309,12 +315,12 @@ async def test_item_failure_doesnt_block_others(orch_session_factory):
 
 
 async def test_partial_quote(orch_session_factory):
-    """Job with failed items: quote contains only successful items."""
+    """Quote with failed items: quote contains only successful items."""
     from yes_chef.orchestrator.engine import Orchestrator
 
     call_count = 0
 
-    async def failing_decompose(item_name, item_description, work_item_id, session):
+    async def failing_decompose(item_name, item_description, menu_item_id, session):
         nonlocal call_count
         call_count += 1
         if call_count == 2:
@@ -330,16 +336,16 @@ async def test_partial_quote(orch_session_factory):
         resolve_fn=make_mock_resolve_fn(),
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_3_ITEMS)
-    quote = await orch.process_job(job_id)
+    quote_id = await orch.submit_quote(MENU_SPEC_3_ITEMS)
+    quote = await orch.process_quote(quote_id)
 
     # Only 2 successful items in quote
     assert len(quote["line_items"]) == 2
 
-    # Job status reflects failure(s) — either "completed_with_errors" or "completed"
+    # Quote status reflects failure(s) — either "completed_with_errors" or "completed"
     async with orch_session_factory() as sess:
-        job = await sess.get(Job, job_id)
-        assert job.status in ("completed", "completed_with_errors")
+        quote_obj = await sess.get(Quote, quote_id)
+        assert quote_obj.status in ("completed", "completed_with_errors")
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +354,7 @@ async def test_partial_quote(orch_session_factory):
 
 
 async def test_resume_completed_items_skipped(orch_session_factory):
-    """A work item already 'completed' is NOT reprocessed on resume."""
+    """A menu item already 'completed' is NOT reprocessed on resume."""
     from yes_chef.orchestrator.engine import Orchestrator
 
     decompose_fn = make_mock_decompose_fn()
@@ -361,11 +367,13 @@ async def test_resume_completed_items_skipped(orch_session_factory):
         resolve_fn=resolve_fn,
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_3_ITEMS)
+    quote_id = await orch.submit_quote(MENU_SPEC_3_ITEMS)
 
     # Manually mark one item as "completed" before processing
     async with orch_session_factory() as sess:
-        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        result = await sess.execute(
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
+        )
         items = result.scalars().all()
         first_item = items[0]
         first_item_id = first_item.id
@@ -387,7 +395,7 @@ async def test_resume_completed_items_skipped(orch_session_factory):
         }
         await sess.commit()
 
-    await orch.process_job(job_id)
+    await orch.process_quote(quote_id)
 
     # Only 2 items should have been processed (not 3)
     assert decompose_fn.call_count == 2
@@ -395,7 +403,7 @@ async def test_resume_completed_items_skipped(orch_session_factory):
 
     # Pre-completed item should still be completed with original data
     async with orch_session_factory() as sess:
-        item = await sess.get(WorkItem, first_item_id)
+        item = await sess.get(MenuItem, first_item_id)
         assert item.status == "completed"
         assert item.step_data["ingredient_cost_per_unit"] == 3.0
 
@@ -419,7 +427,7 @@ async def test_resume_decomposed_items_resume_at_resolve(orch_session_factory):
         resolve_fn=resolve_fn,
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_3_ITEMS)
+    quote_id = await orch.submit_quote(MENU_SPEC_3_ITEMS)
 
     # Manually mark one item as "decomposed" with ingredients in step_data
     persisted_ingredients = [
@@ -427,7 +435,9 @@ async def test_resume_decomposed_items_resume_at_resolve(orch_session_factory):
         {"name": "persisted ingredient B", "quantity": "1 tbsp"},
     ]
     async with orch_session_factory() as sess:
-        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        result = await sess.execute(
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
+        )
         items = result.scalars().all()
         decomposed_item = items[0]
 
@@ -435,7 +445,7 @@ async def test_resume_decomposed_items_resume_at_resolve(orch_session_factory):
         decomposed_item.step_data = {"ingredients": persisted_ingredients}
         await sess.commit()
 
-    await orch.process_job(job_id)
+    await orch.process_quote(quote_id)
 
     # decompose called only for the 2 non-decomposed items
     assert decompose_fn.call_count == 2
@@ -469,11 +479,13 @@ async def test_resume_resolving_items_restart_resolve(orch_session_factory):
         resolve_fn=resolve_fn,
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_3_ITEMS)
+    quote_id = await orch.submit_quote(MENU_SPEC_3_ITEMS)
 
     # Mark one item as "resolving" with decomposed ingredients in step_data
     async with orch_session_factory() as sess:
-        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        result = await sess.execute(
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
+        )
         items = result.scalars().all()
         resolving_item = items[0]
         resolving_item_id = resolving_item.id
@@ -486,7 +498,7 @@ async def test_resume_resolving_items_restart_resolve(orch_session_factory):
         }
         await sess.commit()
 
-    await orch.process_job(job_id)
+    await orch.process_quote(quote_id)
 
     # decompose NOT called for the resolving item (only 2 other items)
     assert decompose_fn.call_count == 2
@@ -495,7 +507,7 @@ async def test_resume_resolving_items_restart_resolve(orch_session_factory):
 
     # Resolving item should now be completed
     async with orch_session_factory() as sess:
-        item = await sess.get(WorkItem, resolving_item_id)
+        item = await sess.get(MenuItem, resolving_item_id)
         assert item.status == "completed"
 
 
@@ -518,15 +530,17 @@ async def test_resume_pending_items_restart(orch_session_factory):
         resolve_fn=resolve_fn,
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_3_ITEMS)
-    await orch.process_job(job_id)
+    quote_id = await orch.submit_quote(MENU_SPEC_3_ITEMS)
+    await orch.process_quote(quote_id)
 
     # All 3 items: decompose + resolve each
     assert decompose_fn.call_count == 3
     assert resolve_fn.call_count == 3
 
     async with orch_session_factory() as sess:
-        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        result = await sess.execute(
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
+        )
         items = result.scalars().all()
         for item in items:
             assert item.status == "completed"
@@ -569,7 +583,7 @@ async def test_concurrent_processing(orch_session_factory):
     active_count = 0
     max_active = 0
 
-    async def tracked_decompose(item_name, item_description, work_item_id, session):
+    async def tracked_decompose(item_name, item_description, menu_item_id, session):
         nonlocal active_count, max_active
         active_count += 1
         if active_count > max_active:
@@ -580,7 +594,7 @@ async def test_concurrent_processing(orch_session_factory):
             ingredients=[Ingredient(name="test ingredient", quantity="1 oz")]
         )
 
-    async def tracked_resolve(ingredients, catalog_service, work_item_id, session):
+    async def tracked_resolve(ingredients, catalog_service, menu_item_id, session):
         nonlocal active_count, max_active
         active_count += 1
         if active_count > max_active:
@@ -606,15 +620,17 @@ async def test_concurrent_processing(orch_session_factory):
         max_concurrent=3,
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_6_ITEMS)
-    await orch.process_job(job_id)
+    quote_id = await orch.submit_quote(MENU_SPEC_6_ITEMS)
+    await orch.process_quote(quote_id)
 
     # Semaphore must have capped concurrency at 3
     assert max_active <= 3, f"Concurrency exceeded semaphore: {max_active} > 3"
 
     # All 6 items must have completed
     async with orch_session_factory() as sess:
-        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        result = await sess.execute(
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
+        )
         items = result.scalars().all()
         assert len(items) == 6
         for item in items:
@@ -634,7 +650,7 @@ async def test_concurrent_isolation(orch_session_factory):
 
     fail_target = "Item Three"
 
-    async def selective_decompose(item_name, item_description, work_item_id, session):
+    async def selective_decompose(item_name, item_description, menu_item_id, session):
         await asyncio.sleep(0.01)
         if item_name == fail_target:
             raise RuntimeError(f"Intentional failure for {item_name}")
@@ -644,7 +660,7 @@ async def test_concurrent_isolation(orch_session_factory):
             ]
         )
 
-    async def selective_resolve(ingredients, catalog_service, work_item_id, session):
+    async def selective_resolve(ingredients, catalog_service, menu_item_id, session):
         await asyncio.sleep(0.01)
         ing = ingredients[0]
         match = IngredientMatch(
@@ -666,11 +682,13 @@ async def test_concurrent_isolation(orch_session_factory):
         max_concurrent=3,
     )
 
-    job_id = await orch.submit_job(MENU_SPEC_6_ITEMS)
-    await orch.process_job(job_id)
+    quote_id = await orch.submit_quote(MENU_SPEC_6_ITEMS)
+    await orch.process_quote(quote_id)
 
     async with orch_session_factory() as sess:
-        result = await sess.execute(select(WorkItem).where(WorkItem.job_id == job_id))
+        result = await sess.execute(
+            select(MenuItem).where(MenuItem.quote_id == quote_id)
+        )
         items = result.scalars().all()
         assert len(items) == 6
 

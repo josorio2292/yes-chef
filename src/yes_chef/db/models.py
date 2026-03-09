@@ -12,8 +12,8 @@ class Base(DeclarativeBase):
     pass
 
 
-class Job(Base):
-    __tablename__ = "jobs"
+class Quote(Base):
+    __tablename__ = "quotes"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -34,19 +34,19 @@ class Job(Base):
         DateTime(timezone=True), onupdate=func.now(), nullable=True
     )
 
-    work_items: Mapped[list["WorkItem"]] = relationship(
-        "WorkItem", back_populates="job", cascade="all, delete-orphan"
+    menu_items: Mapped[list["MenuItem"]] = relationship(
+        "MenuItem", back_populates="quote", cascade="all, delete-orphan"
     )
 
 
-class WorkItem(Base):
-    __tablename__ = "work_items"
+class MenuItem(Base):
+    __tablename__ = "menu_items"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False, index=True
+    quote_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=False, index=True
     )
     item_name: Mapped[str] = mapped_column(String, nullable=False)
     category: Mapped[str] = mapped_column(String, nullable=False)
@@ -60,9 +60,9 @@ class WorkItem(Base):
         DateTime(timezone=True), onupdate=func.now(), nullable=True
     )
 
-    job: Mapped["Job"] = relationship("Job", back_populates="work_items")
+    quote: Mapped["Quote"] = relationship("Quote", back_populates="menu_items")
 
-    __table_args__ = (Index("ix_work_items_job_id_status", "job_id", "status"),)
+    __table_args__ = (Index("ix_menu_items_quote_id_status", "quote_id", "status"),)
 
 
 class IngredientCache(Base):

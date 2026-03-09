@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from yes_chef.db.models import Base, CatalogItem, IngredientCache, Job, WorkItem
+from yes_chef.db.models import Base, CatalogItem, IngredientCache, Quote, MenuItem
 
 TEST_DB_URL = os.environ.get(
     "DATABASE_URL",
@@ -41,8 +41,8 @@ async def session(session_factory):
         await sess.rollback()
 
 
-async def test_create_job(session: AsyncSession):
-    job = Job(
+async def test_create_quote(session: AsyncSession):
+    quote = Quote(
         event="Wedding Reception",
         date="2026-06-15",
         venue="The Grand Ballroom",
@@ -51,10 +51,10 @@ async def test_create_job(session: AsyncSession):
         status="pending",
         menu_spec={"courses": ["appetizer", "main", "dessert"]},
     )
-    session.add(job)
+    session.add(quote)
     await session.flush()
 
-    result = await session.execute(select(Job).where(Job.id == job.id))
+    result = await session.execute(select(Quote).where(Quote.id == quote.id))
     fetched = result.scalar_one()
 
     assert fetched.event == "Wedding Reception"
@@ -68,13 +68,13 @@ async def test_create_job(session: AsyncSession):
     assert fetched.created_at is not None
 
 
-async def test_work_item_status_transitions(session: AsyncSession):
-    job = Job(event="Corporate Dinner", status="pending", menu_spec={})
-    session.add(job)
+async def test_menu_item_status_transitions(session: AsyncSession):
+    quote = Quote(event="Corporate Dinner", status="pending", menu_spec={})
+    session.add(quote)
     await session.flush()
 
-    item = WorkItem(
-        job_id=job.id,
+    item = MenuItem(
+        quote_id=quote.id,
         item_name="Beef Wellington",
         category="main",
         status="pending",
@@ -87,20 +87,20 @@ async def test_work_item_status_transitions(session: AsyncSession):
         item.status = new_status
         await session.flush()
 
-        result = await session.execute(select(WorkItem).where(WorkItem.id == item.id))
+        result = await session.execute(select(MenuItem).where(MenuItem.id == item.id))
         fetched = result.scalar_one()
         assert fetched.status == new_status, (
             f"Expected {new_status}, got {fetched.status}"
         )
 
 
-async def test_work_item_failure(session: AsyncSession):
-    job = Job(event="Birthday Party", status="pending", menu_spec={})
-    session.add(job)
+async def test_menu_item_failure(session: AsyncSession):
+    quote = Quote(event="Birthday Party", status="pending", menu_spec={})
+    session.add(quote)
     await session.flush()
 
-    item = WorkItem(
-        job_id=job.id,
+    item = MenuItem(
+        quote_id=quote.id,
         item_name="Mystery Ingredient",
         category="unknown",
         status="pending",
@@ -112,7 +112,7 @@ async def test_work_item_failure(session: AsyncSession):
     item.error = "Could not resolve ingredient: supplier unavailable"
     await session.flush()
 
-    result = await session.execute(select(WorkItem).where(WorkItem.id == item.id))
+    result = await session.execute(select(MenuItem).where(MenuItem.id == item.id))
     fetched = result.scalar_one()
     assert fetched.status == "failed"
     assert fetched.error == "Could not resolve ingredient: supplier unavailable"

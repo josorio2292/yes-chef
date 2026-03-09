@@ -123,7 +123,7 @@ async def fetch_recipe(dish_name: str, dish_description: str) -> str | None:
 async def decompose_item(
     item_name: str,
     item_description: str,
-    work_item_id: UUID,
+    menu_item_id: UUID,
     session_factory: SessionFactory | None,
 ) -> DecompositionResult:
     """
@@ -166,17 +166,17 @@ async def decompose_item(
     if session_factory is not None:
         from sqlalchemy import select
 
-        from yes_chef.db.models import WorkItem
+        from yes_chef.db.models import MenuItem
 
         async with session_factory() as session:
             async with session.begin():
-                stmt = select(WorkItem).where(WorkItem.id == work_item_id)
+                stmt = select(MenuItem).where(MenuItem.id == menu_item_id)
                 db_result = await session.execute(stmt)
-                work_item = db_result.scalar_one_or_none()
+                menu_item = db_result.scalar_one_or_none()
 
-                if work_item is not None:
-                    work_item.status = "decomposed"
-                    work_item.step_data = {
+                if menu_item is not None:
+                    menu_item.status = "decomposed"
+                    menu_item.step_data = {
                         "ingredients": [
                             {"name": ing.name, "quantity": ing.quantity}
                             for ing in decomp_result.ingredients

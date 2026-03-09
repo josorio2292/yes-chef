@@ -1,4 +1,4 @@
-"""Tests for the FastAPI endpoints: health, submit, status, quote."""
+"""Tests for the FastAPI endpoints: health, submit, status, result."""
 
 import uuid
 from typing import Any
@@ -27,7 +27,7 @@ VALID_MENU_SPEC = {
     },
 }
 
-COMPLETED_JOB_QUOTE = {
+COMPLETED_QUOTE = {
     "quote_id": str(uuid.uuid4()),
     "event": "Corporate Gala Dinner",
     "date": "2025-03-15",
@@ -57,35 +57,33 @@ COMPLETED_JOB_QUOTE = {
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_job(
-    job_id: uuid.UUID,
+def _make_mock_quote(
+    quote_id: uuid.UUID,
     status: str = "pending",
-    work_items: list[Any] | None = None,
+    menu_items: list[Any] | None = None,
     quote: dict | None = None,
 ) -> MagicMock:
-    """Return a mock Job with the given attributes."""
-    job = MagicMock()
-    job.id = job_id
-    job.status = status
-    # Store quote in step_data-style slot for convenience
-    job._quote = quote
-    job.work_items = work_items or []
-    return job
+    """Return a mock Quote with the given attributes."""
+    mock_quote = MagicMock()
+    mock_quote.id = quote_id
+    mock_quote.status = status
+    mock_quote._quote = quote
+    mock_quote.menu_items = menu_items or []
+    return mock_quote
 
 
-def _make_mock_work_item(
+def _make_mock_menu_item(
     item_name: str = "Eggs Benedict Bites",
-    step: str = "pending",
     status: str = "pending",
     category: str = "appetizers",
 ) -> MagicMock:
-    wi = MagicMock()
-    wi.item_name = item_name
-    wi.status = status
-    wi.category = category
-    wi.step_data = None
-    wi.error = None
-    return wi
+    mi = MagicMock()
+    mi.item_name = item_name
+    mi.status = status
+    mi.category = category
+    mi.step_data = None
+    mi.error = None
+    return mi
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +97,8 @@ def client():
     from yes_chef.api.app import create_app
 
     mock_orch = MagicMock()
-    mock_orch.submit_job = AsyncMock()
-    mock_orch.process_job = AsyncMock()
+    mock_orch.submit_quote = AsyncMock()
+    mock_orch.process_quote = AsyncMock()
 
     app = create_app(orchestrator=mock_orch)
     with TestClient(app, raise_server_exceptions=True) as c:
@@ -109,7 +107,7 @@ def client():
 
 
 # ---------------------------------------------------------------------------
-# Fixture: client with a mocked DB session for status/quote endpoints
+# Fixture: client with a mocked DB session for status/result endpoints
 # ---------------------------------------------------------------------------
 
 
@@ -119,8 +117,8 @@ def client_with_db():
     from yes_chef.api.app import create_app
 
     mock_orch = MagicMock()
-    mock_orch.submit_job = AsyncMock()
-    mock_orch.process_job = AsyncMock()
+    mock_orch.submit_quote = AsyncMock()
+    mock_orch.process_quote = AsyncMock()
 
     app = create_app(orchestrator=mock_orch)
     with TestClient(app, raise_server_exceptions=True) as c:
@@ -141,58 +139,58 @@ def test_health_endpoint(client):
 
 
 # ---------------------------------------------------------------------------
-# test_submit_job
+# test_submit_quote
 # ---------------------------------------------------------------------------
 
 
-def test_submit_job(client):
-    job_id = uuid.uuid4()
-    client._mock_orch.submit_job.return_value = job_id
+def test_submit_quote(client):
+    quote_id = uuid.uuid4()
+    client._mock_orch.submit_quote.return_value = quote_id
 
-    response = client.post("/jobs", json=VALID_MENU_SPEC)
+    response = client.post("/quotes", json=VALID_MENU_SPEC)
 
     assert response.status_code == 201
     body = response.json()
-    assert "job_id" in body
+    assert "quote_id" in body
     assert "status" in body
     assert body["status"] == "pending"
-    # job_id should be a valid UUID string
-    assert uuid.UUID(body["job_id"]) == job_id
+    # quote_id should be a valid UUID string
+    assert uuid.UUID(body["quote_id"]) == quote_id
 
 
 # ---------------------------------------------------------------------------
-# test_submit_job_invalid_body
+# test_submit_quote_invalid_body
 # ---------------------------------------------------------------------------
 
 
-def test_submit_job_invalid_body(client):
+def test_submit_quote_invalid_body(client):
     """Empty body (missing required fields) should return 422."""
-    response = client.post("/jobs", json={})
+    response = client.post("/quotes", json={})
     assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------
-# test_get_job_status
+# test_get_quote_status
 # ---------------------------------------------------------------------------
 
 
-def test_get_job_status(client):
-    """POST /jobs, then GET /jobs/{id} → 200 with status + items."""
-    job_id = uuid.uuid4()
-    client._mock_orch.submit_job.return_value = job_id
+def test_get_quote_status(client):
+    """POST /quotes, then GET /quotes/{id} → 200 with status + items."""
+    quote_id = uuid.uuid4()
+    client._mock_orch.submit_quote.return_value = quote_id
 
-    wi = _make_mock_work_item(status="pending")
+    mi = _make_mock_menu_item(status="pending")
 
-    with patch("yes_chef.api.app._get_job_with_items") as mock_getter:
+    with patch("yes_chef.api.app._get_quote_with_menu_items") as mock_getter:
         mock_getter.return_value = (
-            _make_mock_job(job_id, status="pending", work_items=[wi]),
-            [wi],
+            _make_mock_quote(quote_id, status="pending", menu_items=[mi]),
+            [mi],
         )
-        response = client.get(f"/jobs/{job_id}")
+        response = client.get(f"/quotes/{quote_id}")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["job_id"] == str(job_id)
+    assert body["quote_id"] == str(quote_id)
     assert "status" in body
     assert "items" in body
     assert isinstance(body["items"], list)
@@ -202,48 +200,48 @@ def test_get_job_status(client):
 
 
 # ---------------------------------------------------------------------------
-# test_get_job_not_found
+# test_get_quote_not_found
 # ---------------------------------------------------------------------------
 
 
-def test_get_job_not_found(client):
-    """GET /jobs/{random_uuid} → 404."""
+def test_get_quote_not_found(client):
+    """GET /quotes/{random_uuid} → 404."""
     random_id = uuid.uuid4()
 
-    with patch("yes_chef.api.app._get_job_with_items") as mock_getter:
+    with patch("yes_chef.api.app._get_quote_with_menu_items") as mock_getter:
         mock_getter.return_value = (None, [])
-        response = client.get(f"/jobs/{random_id}")
+        response = client.get(f"/quotes/{random_id}")
 
     assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# test_get_quote_not_ready
+# test_get_result_not_ready
 # ---------------------------------------------------------------------------
 
 
-def test_get_quote_not_ready(client):
-    """GET /jobs/{id}/quote when job is still pending → 409."""
-    job_id = uuid.uuid4()
+def test_get_result_not_ready(client):
+    """GET /quotes/{id}/result when quote is still pending → 409."""
+    quote_id = uuid.uuid4()
 
-    with patch("yes_chef.api.app._get_job_by_id") as mock_getter:
-        mock_getter.return_value = _make_mock_job(job_id, status="pending")
-        response = client.get(f"/jobs/{job_id}/quote")
+    with patch("yes_chef.api.app._get_quote_by_id") as mock_getter:
+        mock_getter.return_value = _make_mock_quote(quote_id, status="pending")
+        response = client.get(f"/quotes/{quote_id}/result")
 
     assert response.status_code == 409
 
 
 # ---------------------------------------------------------------------------
-# test_get_quote_after_completion
+# test_get_result_after_completion
 # ---------------------------------------------------------------------------
 
 
-def test_get_quote_after_completion(client):
-    """GET /jobs/{id}/quote when job is completed → 200 with quote structure."""
-    job_id = uuid.uuid4()
+def test_get_result_after_completion(client):
+    """GET /quotes/{id}/result when quote is completed → 200 with quote structure."""
+    quote_id = uuid.uuid4()
 
-    wi = _make_mock_work_item(status="completed")
-    wi.step_data = {
+    mi = _make_mock_menu_item(status="completed")
+    mi.step_data = {
         "matches": [
             {
                 "name": "eggs",
@@ -256,16 +254,18 @@ def test_get_quote_after_completion(client):
         "ingredient_cost_per_unit": 0.50,
     }
 
-    mock_job = _make_mock_job(job_id, status="completed", quote=COMPLETED_JOB_QUOTE)
-    mock_job.menu_spec = VALID_MENU_SPEC
+    mock_quote = _make_mock_quote(quote_id, status="completed", quote=COMPLETED_QUOTE)
+    mock_quote.menu_spec = VALID_MENU_SPEC
 
-    with patch("yes_chef.api.app._get_job_by_id") as mock_getter:
-        mock_getter.return_value = mock_job
-        with patch("yes_chef.api.app._get_job_with_items") as mock_items_getter:
-            mock_items_getter.return_value = (mock_job, [wi])
-            with patch("yes_chef.api.app._build_quote_from_job") as mock_quote_builder:
-                mock_quote_builder.return_value = COMPLETED_JOB_QUOTE
-                response = client.get(f"/jobs/{job_id}/quote")
+    with patch("yes_chef.api.app._get_quote_by_id") as mock_getter:
+        mock_getter.return_value = mock_quote
+        with patch("yes_chef.api.app._get_quote_with_menu_items") as mock_items_getter:
+            mock_items_getter.return_value = (mock_quote, [mi])
+            with patch(
+                "yes_chef.api.app._build_quote_from_quote"
+            ) as mock_quote_builder:
+                mock_quote_builder.return_value = COMPLETED_QUOTE
+                response = client.get(f"/quotes/{quote_id}/result")
 
     assert response.status_code == 200
     body = response.json()
