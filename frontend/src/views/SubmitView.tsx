@@ -168,199 +168,219 @@ export default function SubmitView() {
   // ── Render ───────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-canvas flex items-start justify-center px-4 py-12">
-      <div className="w-full max-w-[640px] bg-surface-raised border border-border-subtle rounded-card shadow-sm px-8 py-8">
-        {/* Header */}
-        <header className="mb-8">
-          <h1 className="text-[28px] font-semibold tracking-tight text-text-primary mb-1">
-            Yes Chef
-          </h1>
-          <p className="text-sm text-text-tertiary">
-            Submit a menu spec — get a priced catering quote.
-          </p>
-        </header>
+    <div className="min-h-screen bg-canvas flex items-start justify-center px-4 py-16">
+      <div className="w-full max-w-[640px]">
 
-        <form onSubmit={handleSubmit} noValidate>
-          {/* ── Event Details ────────────────────────────── */}
-          <section className="mb-8">
-            <h2 className="text-xs font-medium tracking-wide uppercase text-text-tertiary mb-4">
-              Event Details
-            </h2>
+        {/* Card */}
+        <div
+          className="bg-surface-raised border border-border-subtle rounded-card px-10 py-10"
+          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.02)' }}
+        >
+          {/* Header */}
+          <header className="mb-10">
+            <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-text-primary mb-1.5">
+              Yes Chef
+            </h1>
+            <p className="text-sm text-text-secondary">
+              Submit a menu spec — get a priced catering quote.
+            </p>
+          </header>
 
-            <div className="grid grid-cols-2 gap-4">
-              {/* Event name */}
-              <div className="col-span-2 flex flex-col gap-2">
-                <label
-                  className="text-xs font-medium tracking-wide text-text-secondary after:content-['_*'] after:text-copper"
-                  htmlFor="event-name"
+          <form onSubmit={handleSubmit} noValidate>
+
+            {/* ── Event Details ────────────────────────────── */}
+            <section className="mb-8">
+              <div className="flex items-center gap-3 mb-5">
+                <h2 className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary">
+                  Event Details
+                </h2>
+                <div className="flex-1 h-px bg-border-subtle" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Event name */}
+                <div className="col-span-2 flex flex-col gap-1.5">
+                  <label
+                    className="text-xs font-medium tracking-wide text-text-secondary after:content-['_*'] after:text-copper"
+                    htmlFor="event-name"
+                  >
+                    Event Name
+                  </label>
+                  <input
+                    id="event-name"
+                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full transition-colors duration-150"
+                    type="text"
+                    placeholder="e.g. The Hartley Wedding"
+                    value={eventName}
+                    onChange={(e) => setEventName(e.target.value)}
+                    autoComplete="off"
+                  />
+                  {fieldErrors['event'] && (
+                    <span className="text-error text-xs">{fieldErrors['event']}</span>
+                  )}
+                </div>
+
+                {/* Date */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="date">
+                    Date
+                  </label>
+                  <input
+                    id="date"
+                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full transition-colors duration-150"
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                  />
+                </div>
+
+                {/* Guest count */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="guest-count">
+                    Guest Count (est.)
+                  </label>
+                  <input
+                    id="guest-count"
+                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full transition-colors duration-150"
+                    type="number"
+                    min="1"
+                    placeholder="e.g. 120"
+                    value={guestCount}
+                    onChange={(e) => setGuestCount(e.target.value)}
+                  />
+                </div>
+
+                {/* Venue */}
+                <div className="col-span-2 flex flex-col gap-1.5">
+                  <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="venue">
+                    Venue
+                  </label>
+                  <input
+                    id="venue"
+                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full transition-colors duration-150"
+                    type="text"
+                    placeholder="e.g. Rooftop at The Palmer House"
+                    value={venue}
+                    onChange={(e) => setVenue(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+
+                {/* Notes */}
+                <div className="col-span-2 flex flex-col gap-1.5">
+                  <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="notes">
+                    Notes
+                  </label>
+                  <textarea
+                    id="notes"
+                    className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full resize-y min-h-[80px] leading-relaxed transition-colors duration-150"
+                    placeholder="Dietary restrictions, service style, special requests…"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* Divider */}
+            <div className="h-px bg-border-subtle my-8" />
+
+            {/* ── Menu Spec ────────────────────────────────── */}
+            <section className="mb-8">
+              <div className="flex items-center gap-3 mb-5">
+                <h2 className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary">
+                  Menu Spec
+                </h2>
+                <div className="flex-1 h-px bg-border-subtle" />
+              </div>
+
+              <div className="flex items-center gap-3 mb-4">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-inset border border-border-default rounded-button text-xs font-medium text-text-secondary hover:border-border-strong hover:text-text-primary transition-colors duration-150"
+                  onClick={() => fileInputRef.current?.click()}
                 >
-                  Event Name
-                </label>
-                <input
-                  id="event-name"
-                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full"
-                  type="text"
-                  placeholder="e.g. The Hartley Wedding"
-                  value={eventName}
-                  onChange={(e) => setEventName(e.target.value)}
-                  autoComplete="off"
-                />
-                {fieldErrors['event'] && (
-                  <span className="text-error text-xs">{fieldErrors['event']}</span>
-                )}
+                  <UploadIcon />
+                  Upload .json
+                </button>
+                <span className="text-xs text-text-muted">or paste JSON below</span>
               </div>
 
-              {/* Date */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="date">
-                  Date
-                </label>
-                <input
-                  id="date"
-                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                />
-              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={(e) => handleFileUpload(e.target.files)}
+              />
 
-              {/* Guest count */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="guest-count">
-                  Guest Count (est.)
-                </label>
-                <input
-                  id="guest-count"
-                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full"
-                  type="number"
-                  min="1"
-                  placeholder="e.g. 120"
-                  value={guestCount}
-                  onChange={(e) => setGuestCount(e.target.value)}
-                />
-              </div>
+              {/* Parse summary */}
+              {parseSummary.length > 0 && (
+                <div className="bg-copper-subtle border border-border-default rounded-card px-4 py-3 mb-4"
+                  style={{ borderColor: 'rgba(193,127,78,0.3)' }}
+                >
+                  <p className="text-xs font-semibold tracking-wide text-copper mb-2.5">
+                    {parseSummary.reduce((sum, s) => sum + s.count, 0)} items across{' '}
+                    {parseSummary.length}{' '}
+                    {parseSummary.length === 1 ? 'category' : 'categories'}
+                  </p>
+                  <ul className="flex flex-wrap gap-1.5 list-none">
+                    {parseSummary.map((s) => (
+                      <li
+                        key={s.category}
+                        className="text-xs font-medium text-copper bg-surface-raised border rounded-badge px-2 py-0.5"
+                        style={{ borderColor: 'rgba(193,127,78,0.25)' }}
+                      >
+                        {s.category} <span className="text-copper/70">({s.count})</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-              {/* Venue */}
-              <div className="col-span-2 flex flex-col gap-2">
-                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="venue">
-                  Venue
-                </label>
-                <input
-                  id="venue"
-                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full"
-                  type="text"
-                  placeholder="e.g. Rooftop at The Palmer House"
-                  value={venue}
-                  onChange={(e) => setVenue(e.target.value)}
-                  autoComplete="off"
-                />
-              </div>
-
-              {/* Notes */}
-              <div className="col-span-2 flex flex-col gap-2">
-                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="notes">
-                  Notes
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="menu-json">
+                  Menu JSON
                 </label>
                 <textarea
-                  id="notes"
-                  className="bg-inset border border-border-default rounded-input px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full resize-y min-h-[80px] leading-relaxed"
-                  placeholder="Dietary restrictions, service style, special requests…"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
+                  id="menu-json"
+                  className="bg-inset border border-border-default rounded-input px-3 py-2.5 text-[13px] font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper/10 w-full resize-y min-h-[160px] leading-relaxed transition-colors duration-150"
+                  placeholder={`{\n  "appetizers": [\n    { "name": "Bruschetta", "servings": 2 }\n  ]\n}`}
+                  value={menuJson}
+                  onChange={(e) => handleMenuJsonChange(e.target.value)}
+                  spellCheck={false}
                 />
+                {jsonError && (
+                  <span className="text-error text-xs">{jsonError}</span>
+                )}
               </div>
-            </div>
-          </section>
+            </section>
 
-          <hr className="border-none border-t border-border-subtle my-8" />
-
-          {/* ── Menu Spec ────────────────────────────────── */}
-          <section className="mb-8">
-            <h2 className="text-xs font-medium tracking-wide uppercase text-text-tertiary mb-4">
-              Menu Spec
-            </h2>
-
-            <div className="flex items-center gap-3 mb-4">
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-inset border border-border-default rounded-button text-xs font-medium text-text-secondary hover:border-border-strong hover:text-text-primary transition-colors duration-150"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <UploadIcon />
-                Upload .json
-              </button>
-              <span className="text-xs text-text-muted tracking-wide">or paste JSON below</span>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              className="hidden"
-              onChange={(e) => handleFileUpload(e.target.files)}
-            />
-
-            {/* Parse summary */}
-            {parseSummary.length > 0 && (
-              <div className="bg-copper-subtle border border-copper/20 rounded-card px-4 py-3 mb-4">
-                <p className="text-xs font-medium tracking-wide text-copper mb-2">
-                  {parseSummary.reduce((sum, s) => sum + s.count, 0)} items across{' '}
-                  {parseSummary.length}{' '}
-                  {parseSummary.length === 1 ? 'category' : 'categories'}
-                </p>
-                <ul className="flex flex-wrap gap-2 list-none">
-                  {parseSummary.map((s) => (
-                    <li
-                      key={s.category}
-                      className="text-xs font-medium tracking-wide text-copper-hover bg-surface-raised border border-copper/30 rounded-badge px-2 py-0.5"
-                    >
-                      {s.category} ({s.count})
-                    </li>
-                  ))}
-                </ul>
+            {/* ── Error ────────────────────────────────────── */}
+            {submitError && (
+              <div className="bg-error-subtle border border-error/20 rounded-card px-4 py-3 mb-6 text-sm text-error leading-relaxed">
+                {submitError}
               </div>
             )}
 
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-medium tracking-wide text-text-secondary" htmlFor="menu-json">
-                Menu JSON
-              </label>
-              <textarea
-                id="menu-json"
-                className="bg-inset border border-border-default rounded-input px-3 py-2 text-[13px] font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-strong focus:ring-2 focus:ring-copper-subtle w-full resize-y min-h-[160px] leading-relaxed"
-                placeholder={`{\n  "appetizers": [\n    { "name": "Bruschetta", "servings": 2 }\n  ]\n}`}
-                value={menuJson}
-                onChange={(e) => handleMenuJsonChange(e.target.value)}
-                spellCheck={false}
-              />
-              {jsonError && (
-                <span className="text-error text-xs">{jsonError}</span>
-              )}
+            {/* ── Footer / CTA ─────────────────────────────── */}
+            <div className="pt-6 border-t border-border-subtle mt-2">
+              <button
+                type="submit"
+                className="w-full inline-flex items-center justify-center gap-3 px-6 py-3.5 bg-copper hover:bg-copper-hover active:scale-[0.99] text-white border-none rounded-button text-[15px] font-semibold tracking-[-0.01em] transition-all duration-150 disabled:opacity-55 disabled:cursor-not-allowed"
+                disabled={submitting}
+              >
+                {submitting && (
+                  <span className="w-4 h-4 border-2 border-white/35 border-t-white rounded-full animate-spin" />
+                )}
+                {submitting ? 'Sending to kitchen…' : 'Start Quote'}
+              </button>
             </div>
-          </section>
 
-          {/* ── Error ────────────────────────────────────── */}
-          {submitError && (
-            <div className="bg-error-subtle border border-error/25 rounded-card px-4 py-3 mt-4 text-sm text-error leading-relaxed">
-              {submitError}
-            </div>
-          )}
+          </form>
+        </div>
 
-          {/* ── Footer / CTA ─────────────────────────────── */}
-          <div className="flex justify-end pt-4 border-t border-border-subtle mt-8">
-            <button
-              type="submit"
-              className="inline-flex items-center gap-3 px-6 py-3 bg-copper hover:bg-copper-hover text-white border-none rounded-button text-base font-semibold transition-colors duration-150 disabled:opacity-55 disabled:cursor-not-allowed"
-              disabled={submitting}
-            >
-              {submitting && (
-                <span className="w-4 h-4 border-2 border-white/35 border-t-white rounded-full animate-spin" />
-              )}
-              {submitting ? 'Sending to kitchen…' : 'Start Quote'}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   )
