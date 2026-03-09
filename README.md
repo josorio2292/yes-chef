@@ -47,6 +47,57 @@ pnpm run format:check
 
 ---
 
+## Cloud Deployment (Render)
+
+The app is designed for Render but any Docker-capable platform works. Three services: PostgreSQL with pgvector, the FastAPI backend, and the React frontend.
+
+### 1. Create PostgreSQL with pgvector
+
+1. Render Dashboard → **New** → **PostgreSQL**
+2. Select PostgreSQL **16**, same region as your web services
+3. Once created, connect and enable pgvector:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
+4. Copy the **Internal Database URL** from the database's Connect panel
+
+### 2. Deploy the API (Web Service)
+
+1. Render Dashboard → **New** → **Web Service**
+2. Connect your GitHub repo, set **Root Directory** to `/` (default)
+3. Set **Language** to **Docker** (it will use the root `Dockerfile`)
+4. Configure environment variables:
+
+   | Variable | Value | Required |
+   |----------|-------|----------|
+   | `DATABASE_URL` | `postgresql+asyncpg://...` (from step 1 — replace `postgresql://` prefix with `postgresql+asyncpg://`) | ✅ |
+   | `SYSCO_CSV_PATH` | `/app/data/sysco_catalog.csv` | ✅ |
+   | `OPENAI_API_KEY` | Your OpenAI API key | ✅ |
+   | `DECOMPOSITION_MODEL` | `openai:gpt-4o-mini` | ✅ |
+   | `MATCHING_MODEL` | `openai:gpt-4o-mini` | ✅ |
+   | `EXA_API_KEY` | Your Exa API key (improves recipe grounding) | Optional |
+
+5. Health check path: `/health`
+6. Deploy — on first startup, Alembic runs migrations and the catalog is embedded (~565 items)
+
+### 3. Deploy the Frontend (Static Site)
+
+1. Render Dashboard → **New** → **Static Site**
+2. Connect the same repo, set **Root Directory** to `frontend`
+3. **Build Command**: `pnpm install && pnpm run build`
+4. **Publish Directory**: `dist`
+
+Alternatively, deploy as a Docker Web Service using `frontend/Dockerfile` — this uses nginx with a reverse proxy to the API (the API URL is hardcoded in `frontend/nginx.conf`).
+
+### Notes
+
+- The API and database should be in the **same Render region** for private networking
+- On first startup, the API embeds all catalog items using OpenAI's `text-embedding-3-small` — this takes ~30 seconds and only happens once
+- Render's managed PostgreSQL supports pgvector on PostgreSQL 13+
+- The `DATABASE_URL` from Render uses `postgresql://` — you must change the prefix to `postgresql+asyncpg://` for the async driver
+
+---
+
 ## Architecture
 
 ```
