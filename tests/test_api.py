@@ -280,3 +280,144 @@ def test_get_result_after_completion(client):
     assert "category" in line_item
     assert "ingredients" in line_item
     assert "ingredient_cost_per_unit" in line_item
+
+
+# ---------------------------------------------------------------------------
+# test_list_quotes
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_quote_with_attrs(
+    quote_id: uuid.UUID,
+    event: str = "Test Event",
+    date: str | None = "2025-06-01",
+    venue: str | None = "Test Venue",
+    guest_count_estimate: int | None = 100,
+    status: str = "pending",
+    menu_items: list[Any] | None = None,
+    created_at: Any | None = None,
+) -> MagicMock:
+    """Return a mock Quote with full scalar attributes for the list endpoint."""
+    import datetime as dt
+
+    mock_quote = MagicMock()
+    mock_quote.id = quote_id
+    mock_quote.event = event
+    mock_quote.date = date
+    mock_quote.venue = venue
+    mock_quote.guest_count_estimate = guest_count_estimate
+    mock_quote.status = status
+    mock_quote.menu_items = menu_items or []
+    mock_quote.created_at = created_at or dt.datetime(
+        2025, 1, 1, 12, 0, 0, tzinfo=dt.timezone.utc
+    )
+    return mock_quote
+
+
+def test_list_quotes_empty(client):
+    """GET /quotes returns [] when no quotes exist."""
+    with patch("yes_chef.api.app._get_all_quotes") as mock_getter:
+        mock_getter.return_value = []
+        response = client.get("/quotes")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_quotes_descending_order(client):
+    """GET /quotes returns quotes ordered by created_at descending (newest first)."""
+    import datetime as dt
+
+    older_id = uuid.uuid4()
+    newer_id = uuid.uuid4()
+
+    older = _make_mock_quote_with_attrs(
+        older_id,
+        event="Older Event",
+        created_at=dt.datetime(2025, 1, 1, tzinfo=dt.timezone.utc),
+    )
+    newer = _make_mock_quote_with_attrs(
+        newer_id,
+        event="Newer Event",
+        created_at=dt.datetime(2025, 6, 1, tzinfo=dt.timezone.utc),
+    )
+
+    # Return already-sorted (newest first) as the endpoint should deliver
+    with patch("yes_chef.api.app._get_all_quotes") as mock_getter:
+        mock_getter.return_value = [newer, older]
+        response = client.get("/quotes")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 2
+    assert body[0]["quote_id"] == str(newer_id)
+    assert body[1]["quote_id"] == str(older_id)
+
+
+def test_list_quotes_summary_fields(client):
+    """Each quote summary contains the required fields."""
+    import datetime as dt
+
+    quote_id = uuid.uuid4()
+    mi_completed = _make_mock_menu_item(status="completed")
+    mi_failed = _make_mock_menu_item(status="failed")
+    mi_pending = _make_mock_menu_item(status="pending")
+
+    mock_quote = _make_mock_quote_with_attrs(
+        quote_id,
+        event="Gala Dinner",
+        date="2025-09-10",
+        venue="Grand Hall",
+        guest_count_estimate=200,
+        status="completed_with_errors",
+        menu_items=[mi_completed, mi_failed, mi_pending],
+        created_at=dt.datetime(2025, 9, 1, tzinfo=dt.timezone.utc),
+    )
+
+    with patch("yes_chef.api.app._get_all_quotes") as mock_getter:
+        mock_getter.return_value = [mock_quote]
+        response = client.get("/quotes")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+
+    summary = body[0]
+    assert summary["quote_id"] == str(quote_id)
+    assert summary["event"] == "Gala Dinner"
+    assert summary["date"] == "2025-09-10"
+    assert summary["venue"] == "Grand Hall"
+    assert summary["guest_count_estimate"] == 200
+    assert summary["status"] == "completed_with_errors"
+    assert summary["total_items"] == 3
+    assert summary["completed_items"] == 1
+    assert summary["failed_items"] == 1
+    assert "created_at" in summary
+
+
+def test_list_quotes_item_counts(client):
+    """Item counts (total, completed, failed) are computed correctly per quote."""
+    import datetime as dt
+
+    q1_id = uuid.uuid4()
+    items = [
+        _make_mock_menu_item(status="completed"),
+        _make_mock_menu_item(status="completed"),
+        _make_mock_menu_item(status="failed"),
+    ]
+    q1 = _make_mock_quote_with_attrs(
+        q1_id,
+        status="completed_with_errors",
+        menu_items=items,
+        created_at=dt.datetime(2025, 5, 1, tzinfo=dt.timezone.utc),
+    )
+
+    with patch("yes_chef.api.app._get_all_quotes") as mock_getter:
+        mock_getter.return_value = [q1]
+        response = client.get("/quotes")
+
+    assert response.status_code == 200
+    summary = response.json()[0]
+    assert summary["total_items"] == 3
+    assert summary["completed_items"] == 2
+    assert summary["failed_items"] == 1

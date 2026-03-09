@@ -53,9 +53,39 @@ class QuoteStatusResponse(BaseModel):
     items: list[dict]
 
 
+class QuoteSummary(BaseModel):
+    quote_id: str
+    event: str
+    date: str | None
+    venue: str | None
+    guest_count_estimate: int | None
+    status: str
+    total_items: int
+    completed_items: int
+    failed_items: int
+    created_at: str
+
+
 # ---------------------------------------------------------------------------
 # Internal DB helpers (module-level so tests can patch them)
 # ---------------------------------------------------------------------------
+
+
+async def _get_all_quotes(
+    session_factory: async_sessionmaker,
+) -> list[Any]:
+    """Return all Quotes with their menu_items, ordered by created_at descending."""
+    from yes_chef.db.models import Quote
+
+    from sqlalchemy.orm import selectinload
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(Quote)
+            .options(selectinload(Quote.menu_items))
+            .order_by(Quote.created_at.desc())
+        )
+        return list(result.scalars().all())
 
 
 async def _get_quote_with_menu_items(
@@ -203,6 +233,36 @@ def create_app(
     @app.get("/health")
     async def health() -> dict:
         return {"status": "ok"}
+
+    # ------------------------------------------------------------------
+    # GET /quotes  → 200
+    # ------------------------------------------------------------------
+
+    @app.get("/quotes", response_model=list[QuoteSummary])
+    async def list_quotes() -> list[QuoteSummary]:
+        sf = app.state.session_factory
+        quotes = await _get_all_quotes(sf)
+        summaries = []
+        for q in quotes:
+            items = q.menu_items
+            total = len(items)
+            completed = sum(1 for mi in items if mi.status == "completed")
+            failed = sum(1 for mi in items if mi.status == "failed")
+            summaries.append(
+                QuoteSummary(
+                    quote_id=str(q.id),
+                    event=q.event,
+                    date=q.date,
+                    venue=q.venue,
+                    guest_count_estimate=q.guest_count_estimate,
+                    status=q.status,
+                    total_items=total,
+                    completed_items=completed,
+                    failed_items=failed,
+                    created_at=q.created_at.isoformat(),
+                )
+            )
+        return summaries
 
     # ------------------------------------------------------------------
     # POST /quotes  → 201
