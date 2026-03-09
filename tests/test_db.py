@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from yes_chef.db.models import Base, CatalogItem, IngredientCache, Quote, MenuItem
+from yes_chef.db.models import Base, CatalogItem, IngredientCache, MenuItem, Quote
 
 TEST_DB_URL = os.environ.get(
     "DATABASE_URL",

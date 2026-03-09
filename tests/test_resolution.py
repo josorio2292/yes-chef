@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from yes_chef.catalog.provider import ItemNotFoundError, PriceResult
 from yes_chef.catalog.service import CatalogCandidate, CatalogService
-from yes_chef.db.models import Base, IngredientCache, Quote, MenuItem
+from yes_chef.db.models import Base, IngredientCache, MenuItem, Quote
 from yes_chef.decomposition.engine import Ingredient
 
 TEST_DB_URL = os.environ.get(
@@ -564,9 +564,7 @@ async def test_partial_ingredient_failure(resolution_session_factory):
     # Menu item should NOT be marked failed (resolve_item checkpoints as "completed")
     async with resolution_session_factory() as sess:
         mi = await sess.get(MenuItem, menu_item_id)
-        assert mi.status != "failed", (
-            "Partial failure must not mark menu item failed"
-        )
+        assert mi.status != "failed", "Partial failure must not mark menu item failed"
 
 
 # ---------------------------------------------------------------------------

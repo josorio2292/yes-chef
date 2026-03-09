@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from yes_chef.catalog.service import CatalogService
-from yes_chef.db.models import Base, Quote, MenuItem
+from yes_chef.db.models import Base, MenuItem, Quote
 from yes_chef.decomposition.engine import DecompositionResult, Ingredient
 from yes_chef.resolution.engine import IngredientMatch, ResolveResult
 

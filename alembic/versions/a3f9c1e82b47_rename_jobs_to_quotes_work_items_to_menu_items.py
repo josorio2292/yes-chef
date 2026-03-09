@@ -63,7 +63,9 @@ def upgrade() -> None:
 
     # 6. Recreate indexes with new names
     op.execute("CREATE INDEX IF NOT EXISTS ix_quotes_status ON quotes (status)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_menu_items_quote_id ON menu_items (quote_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_menu_items_quote_id ON menu_items (quote_id)"
+    )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_menu_items_quote_id_status"
         " ON menu_items (quote_id, status)"

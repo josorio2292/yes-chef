@@ -192,7 +192,9 @@ class Orchestrator:
         item_id = menu_item.id
         item_name = menu_item.item_name
         category = menu_item.category
-        quote_id_str = str(quote_id) if quote_id is not None else str(menu_item.quote_id)
+        quote_id_str = (
+            str(quote_id) if quote_id is not None else str(menu_item.quote_id)
+        )
 
         try:
             # ----------------------------------------------------------------
