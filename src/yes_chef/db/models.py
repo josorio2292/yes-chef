@@ -4,7 +4,7 @@ from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Index, String, func, text
-from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -103,7 +103,7 @@ class CatalogItem(Base):
     cost_per_case: Mapped[float] = mapped_column(nullable=False, server_default="0")
     category: Mapped[str | None] = mapped_column(String, nullable=True)
     brand: Mapped[str | None] = mapped_column(String, nullable=True)
-    source_metadata: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    source_metadata: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -112,6 +112,8 @@ class CatalogItem(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    # HNSW index on embedding (vector_cosine_ops) managed by Alembic migration
+    # d1831d422c32 — not expressible via SQLAlchemy Index.
     __table_args__ = (
         Index(
             "ix_catalog_items_provider_source_item_id",

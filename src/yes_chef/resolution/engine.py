@@ -65,7 +65,7 @@ class ResolutionDeps:
 # ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT = """
-You are matching a recipe ingredient to a Sysco catalog item for catering
+You are matching a recipe ingredient to a supplier catalog item for catering
 cost estimation.
 
 You are given:
@@ -244,6 +244,7 @@ async def resolve_from_cache(
         # Cached source_item_id — try price lookup
         source_item_id = cache_entry.source_item_id
         provider = cache_entry.provider
+        source = cache_entry.source
 
     try:
         price_result = catalog_service.get_price(source_item_id, provider)
@@ -253,7 +254,7 @@ async def resolve_from_cache(
             catalog_item=None,  # not stored in cache; agent result had it
             source_item_id=source_item_id,
             provider=provider,
-            source="sysco_catalog",
+            source=source,
             unit_cost=price_result.cost_per_case,  # cached cost (no UOM re-parsing)
             reasoning="Resolved from cache",
         )

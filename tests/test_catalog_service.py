@@ -216,12 +216,12 @@ async def test_search_correct_match(smart_embedded_catalog) -> None:
 
 async def test_search_known_pairs(smart_embedded_catalog) -> None:
     """At least 5 known ingredient-to-catalog pairs must match at rank 1."""
-    for query, expected_item_number in KNOWN_PAIRS:
+    for query, expected_source_item_id in KNOWN_PAIRS:
         results = await smart_embedded_catalog.search(query, top_k=5)
         assert len(results) > 0, f"No results for query: {query!r}"
         top = results[0]
-        assert top.source_item_id == expected_item_number, (
-            f"Query {query!r}: expected item {expected_item_number!r} at rank 1, "
+        assert top.source_item_id == expected_source_item_id, (
+            f"Query {query!r}: expected item {expected_source_item_id!r} at rank 1, "
             f"got {top.source_item_id!r} ({top.description!r}, "
             f"score={top.similarity_score:.4f})"
         )
