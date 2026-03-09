@@ -26,7 +26,7 @@ const SOURCE_MAP: Record<IngredientSource, { label: string; className: string }>
 function SourceBadge({ source }: { source: string }) {
   const config = SOURCE_MAP[source as IngredientSource] ?? { label: source, className: 'bg-surface text-text-secondary' }
   return (
-    <span className={`inline-block text-xs font-medium tracking-wide rounded-badge px-2 py-0.5 whitespace-nowrap ${config.className}`}>
+    <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded-[4px] whitespace-nowrap ${config.className}`}>
       {config.label}
     </span>
   )
@@ -66,11 +66,11 @@ function IngredientTable({ ingredients }: { ingredients: Ingredient[] }) {
       </thead>
       <tbody>
         {ingredients.map((ing, idx) => (
-          <tr key={idx} className="hover:bg-surface transition-colors duration-150 border-t border-border-subtle first:border-t-0">
+          <tr key={idx} className={`border-t border-border-subtle first:border-t-0 transition-colors duration-150 hover:bg-surface ${idx % 2 === 0 ? 'bg-surface/50' : ''}`}>
             <td className="px-4 py-2.5 text-text-primary min-w-[120px]">
               {ing.name}
             </td>
-            <td className="px-4 py-2.5 font-mono tabular-nums text-text-secondary whitespace-nowrap min-w-[80px]">
+            <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap min-w-[80px]">
               {ing.quantity}
             </td>
             <td className="px-4 py-2.5 font-mono tabular-nums text-text-primary text-right whitespace-nowrap min-w-[80px]">
@@ -79,7 +79,7 @@ function IngredientTable({ ingredients }: { ingredients: Ingredient[] }) {
             <td className="px-4 py-2.5 whitespace-nowrap min-w-[100px]">
               <SourceBadge source={ing.source} />
             </td>
-            <td className="px-4 py-2.5 font-mono tabular-nums text-xs text-text-secondary text-right whitespace-nowrap min-w-[100px]">
+            <td className="px-4 py-2.5 font-mono tabular-nums text-[11px] text-text-tertiary text-right whitespace-nowrap min-w-[100px]">
               {ing.source_item_id ?? (
                 <span className="text-text-muted">—</span>
               )}
@@ -107,7 +107,7 @@ function LineItemCard({ item }: { item: LineItem }) {
 
   return (
     <article
-      className="bg-surface-raised border border-border-subtle rounded-card shadow-sm overflow-hidden"
+      className="bg-surface-raised border border-border-subtle rounded-card shadow-sm overflow-hidden transition-shadow duration-200 hover:shadow-md"
       aria-expanded={expanded}
     >
       <div
@@ -287,7 +287,7 @@ export default function PassView() {
           className="bg-surface-raised border border-border-subtle rounded-card shadow-sm p-6 flex flex-col gap-2"
           aria-label="Quote summary"
         >
-          <h1 className="text-[28px] font-semibold tracking-tight text-text-primary leading-tight m-0">
+          <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-text-primary leading-tight m-0">
             {quote.event}
           </h1>
 
@@ -295,7 +295,7 @@ export default function PassView() {
             {quote.date && (
               <>
                 <span>{formatDate(quote.date)}</span>
-                {quote.venue && <span className="text-border-default select-none">·</span>}
+                {quote.venue && <span className="text-text-muted select-none">·</span>}
               </>
             )}
             {quote.venue && <span>{quote.venue}</span>}
@@ -307,11 +307,11 @@ export default function PassView() {
               {lineItems.length === 1 ? 'menu item' : 'menu items'}
             </p>
 
-            <div className="font-mono tabular-nums text-right">
-              <span className="block text-xs font-medium tracking-wide uppercase text-text-secondary mb-0.5 text-right font-sans not-italic">
+            <div className="text-right">
+              <span className="block text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary mb-1 font-sans">
                 Total Cost
               </span>
-              <span className="text-xl font-semibold text-text-primary">
+              <span className="text-[28px] font-mono font-semibold tabular-nums text-text-primary leading-none">
                 {formatCurrency(total)}
               </span>
             </div>
@@ -326,7 +326,7 @@ export default function PassView() {
             </p>
           ) : (
             <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium tracking-wide uppercase text-text-tertiary mb-1">
+              <p className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-tertiary mb-2">
                 Line Items
               </p>
               {lineItems.map((item, idx) => (
@@ -337,10 +337,10 @@ export default function PassView() {
         </section>
 
         {/* ── Export ── */}
-        <div className="flex justify-end pt-2">
+        <div className="flex justify-center pt-2">
           <button
             type="button"
-            className="inline-flex items-center gap-2 font-sans text-sm font-medium text-text-secondary bg-surface-raised border border-border-default rounded-card px-4 py-2.5 cursor-pointer transition-all duration-150 hover:bg-surface hover:border-border-strong hover:text-text-primary active:bg-inset select-none"
+            className="inline-flex items-center gap-2 font-sans text-sm font-medium text-text-secondary bg-surface border border-border-default rounded-card px-4 py-2.5 cursor-pointer transition-all duration-150 hover:border-border-strong hover:text-text-primary active:bg-inset select-none"
             onClick={() => exportQuote(quote)}
             aria-label="Export quote as JSON file"
           >
