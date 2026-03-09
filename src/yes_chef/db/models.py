@@ -112,8 +112,6 @@ class CatalogItem(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    # HNSW index on embedding (vector_cosine_ops) managed by Alembic migration
-    # d1831d422c32 — not expressible via SQLAlchemy Index.
     __table_args__ = (
         Index(
             "ix_catalog_items_provider_source_item_id",
@@ -126,5 +124,12 @@ class CatalogItem(Base):
             "ix_catalog_items_is_active",
             "is_active",
             postgresql_where=text("is_active = TRUE"),
+        ),
+        Index(
+            "ix_catalog_items_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
+            postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
     )
