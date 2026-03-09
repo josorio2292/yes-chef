@@ -9,15 +9,15 @@
 
 - **Who:** Catering company owners and event planners. Practical, time-pressured. Not developers.
 - **Task:** Submit a menu → watch ingredients resolve in real-time → get a priced quote for client proposals.
-- **Feel:** Like a well-run professional kitchen. Confident, organized, warm. Mise en place — everything in its place. Not cold/corporate, not playful/casual. Calm authority.
+- **Feel:** A high-end professional kitchen at night. Dark, warm, composed. Aged copper fixtures, blackened steel, the amber glow of heat lamps. Calm authority — not cold/corporate, not playful/casual.
 
 ## Direction: "The Pass"
 
-A professional kitchen command center. Three views that mirror the kitchen workflow:
+A professional kitchen command center rendered in dark luxury. Three views that mirror the kitchen workflow:
 
-1. **Submit** — menu input. Clean, focused, like writing a prep list.
-2. **Kitchen** — live progress. Ticket rail showing items moving through stations.
-3. **The Pass** — final quote review. Polished, inspected, ready to send to client.
+1. **Submit** — menu input. Focused card on a dark canvas, like a handwritten prep list under low light.
+2. **Kitchen** — live ticket rail. Items moving through stations in real-time, copper accents marking active work.
+3. **The Pass** — final quote review. Polished, inspected, ready to hand to the client.
 
 ---
 
@@ -26,7 +26,7 @@ A professional kitchen command center. Three views that mirror the kitchen workf
 | Concept | UI mapping |
 |---------|-----------|
 | Mise en place | Overall layout — organized, nothing extraneous |
-| Ticket rail | Progress view — items as cards moving through stations |
+| Ticket rail | Kitchen view — items as cards moving through stations |
 | The pass | Quote view — final inspection before it goes out |
 | Prep station | Decompose step — raw menu → ingredient list |
 | 86'd | `not_available` status — kitchen slang for "out of it" |
@@ -34,64 +34,74 @@ A professional kitchen command center. Three views that mirror the kitchen workf
 
 ## Palette
 
-Derived from a professional kitchen — not applied to it.
+Derived from a professional kitchen at night — blackened steel, aged copper, warm task lighting.
 
-### Foundation
+### Canvas & Surfaces
 
-| Token | Value | Source |
-|-------|-------|--------|
-| `--bg-canvas` | `#FAF8F5` | Butcher paper / marble countertop |
-| `--bg-surface` | `#F2EFEB` | Parchment — cards rest on this |
-| `--bg-surface-raised` | `#FFFFFF` | Ticket cards — slight lift above surface |
-| `--bg-inset` | `#ECEAE6` | Input fields — "inset" signals "type here" |
+| Token | Value | Use |
+|-------|-------|-----|
+| `--color-canvas` | `#0E0D0C` | Page background — near-black with warm undertone |
+| `--color-surface` | `#171614` | Base surface — cards, panels |
+| `--color-surface-raised` | `#1F1D1A` | Elevated cards — modal content, form cards |
+| `--color-surface-hover` | `#252320` | Hover state on interactive surfaces |
+| `--color-inset` | `#141312` | Input fields — "inset" reads as recessed |
 
 ### Text
 
 | Token | Value | Use |
 |-------|-------|-----|
-| `--text-primary` | `#2C2C2C` | Slate/charcoal — primary content |
-| `--text-secondary` | `#5C5C5C` | Cast iron grey — labels, secondary info |
-| `--text-tertiary` | `#8C8C8C` | Muted — hints, timestamps |
-| `--text-muted` | `#ACACAC` | Disabled, placeholder |
+| `--color-text-primary` | `#F2EDE4` | Warm white — primary content |
+| `--color-text-secondary` | `#A89F92` | Parchment — labels, secondary info |
+| `--color-text-tertiary` | `#6B6560` | Dim — hints, timestamps, station labels |
+| `--color-text-muted` | `#423E3A` | Near-invisible — disabled, placeholder |
 
-### Accent
+### Copper Accent
 
-| Token | Value | Source |
-|-------|-------|--------|
-| `--accent` | `#C17F4E` | Copper — pots, fixtures. Used for CTAs, active states |
-| `--accent-hover` | `#A96B3E` | Darker copper on hover |
-| `--accent-subtle` | `#F5EDE5` | Copper wash — subtle highlight backgrounds |
+| Token | Value | Use |
+|-------|-------|-----|
+| `--color-copper` | `#C8864A` | Aged copper — primary action, active states, focus |
+| `--color-copper-hover` | `#D99A5A` | Brightened copper on hover |
+| `--color-copper-subtle` | `#2A1E12` | Deep copper wash — subtle highlight backgrounds |
+| `--color-copper-glow` | `rgba(200,134,74,0.15)` | Ambient glow for focus rings, card glows |
 
 ### Status
 
 | Token | Value | Source | Maps to |
 |-------|-------|--------|---------|
-| `--status-success` | `#5B8A5E` | Herb green — fresh produce | `sysco_catalog` — exact match |
-| `--status-success-subtle` | `#EFF5EF` | Light herb wash | Success backgrounds |
-| `--status-warning` | `#C49A3C` | Warm amber — golden onion skin | `estimated` — approximate match |
-| `--status-warning-subtle` | `#FBF5E8` | Light amber wash | Warning backgrounds |
-| `--status-error` | `#B05A5A` | Muted brick red — not harsh | `not_available` — 86'd |
-| `--status-error-subtle` | `#F9F0F0` | Light red wash | Error backgrounds |
-| `--status-neutral` | `#8C8C8C` | Cast iron grey | Pending, in-progress |
+| `--color-success` | `#6AAB6E` | Herb green — fresh produce | `sysco_catalog` — exact match |
+| `--color-success-subtle` | `#0F2410` | Deep green wash | Success backgrounds |
+| `--color-success-text` | `#8FCC93` | Lighter green for text on dark | Success labels |
+| `--color-warning` | `#C4933A` | Warm amber — golden onion skin | `estimated` — approximate match |
+| `--color-warning-subtle` | `#261A08` | Deep amber wash | Warning backgrounds |
+| `--color-warning-text` | `#D4A84E` | Lighter amber for text on dark | Warning labels |
+| `--color-error` | `#B55A5A` | Muted brick red | `not_available` — 86'd |
+| `--color-error-subtle` | `#250E0E` | Deep red wash | Error backgrounds |
+| `--color-error-text` | `#CC7A7A` | Lighter red for text on dark | Error labels |
 
 ### Borders
 
 | Token | Value | Use |
 |-------|-------|-----|
-| `--border-subtle` | `#E5E2DE` | Card edges, dividers — whisper-quiet |
-| `--border-default` | `#D4D0CC` | Input borders, more visible separation |
-| `--border-strong` | `#B0ADA8` | Focus rings, emphasis |
+| `--color-border-subtle` | `#252220` | Card edges, dividers — whisper-quiet |
+| `--color-border-default` | `#332F2B` | Input borders, visible separation |
+| `--color-border-strong` | `#4A4540` | Emphasis, strong dividers |
+| `--color-border-accent` | `rgba(200,134,74,0.35)` | Copper accent borders on focus/active |
 
-## Depth Strategy: Subtle Shadows
+## Depth Strategy: Dark Shadows
 
-Soft lift — approachable, like recipe cards resting on a prep surface. One strategy throughout.
+Heavy, warm shadows — surfaces lifting out of a dark void. No diffuse light-mode softness here.
 
-| Level | Shadow | Use |
+| Token | Value | Use |
 |-------|--------|-----|
-| 0 | none | Flat surfaces, inset inputs |
-| 1 | `0 1px 2px rgba(0,0,0,0.04)` | Cards at rest — ticket cards on the rail |
-| 2 | `0 2px 8px rgba(0,0,0,0.06)` | Hovered cards, dropdowns |
-| 3 | `0 4px 16px rgba(0,0,0,0.08)` | Modals, popovers |
+| `--shadow-sm` | `0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3)` | Subtle lift — inline cards, badges |
+| `--shadow-md` | `0 4px 16px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.35)` | Elevated cards, dropdowns |
+| `--shadow-lg` | `0 12px 40px rgba(0,0,0,0.65), 0 4px 12px rgba(0,0,0,0.4)` | Form cards, modals |
+| `--shadow-copper` | `0 0 0 3px rgba(200,134,74,0.15)` | Focus ring — copper glow |
+| `--shadow-glow` | `0 0 24px rgba(200,134,74,0.12)` | Ambient copper glow on key surfaces |
+
+The body carries two atmospheric overlays:
+- **Grain texture** — fractalNoise SVG via `body::before`, `opacity: 0.03`. Adds tactile warmth.
+- **Vignette** — radial-gradient darkening edges via `body::after`, `opacity: 0.4`. Focuses the eye on the center.
 
 ## Spacing
 
@@ -107,117 +117,164 @@ Base unit: **4px**
 | xl | 32px | Major section separation |
 | 2xl | 48px | Page-level spacing |
 
+Page containers: `max-w-[1200px] mx-auto px-8` for Kitchen and Pass; `max-w-xl` centered card for Submit.
+
 ## Typography
 
-Slightly rounded sans-serif — approachable but professional. Not a cold tech font.
+Three-font system: a serif display, a serif body, and a monospace data font. No sans-serif — this is a luxury kitchen, not a SaaS dashboard.
 
-**Font:** Inter (widely available, slightly rounded terminals, excellent at small sizes for data-dense views).
+| Role | Font | Fallbacks |
+|------|------|-----------|
+| `--font-display` | Cormorant Garamond | Georgia, serif |
+| `--font-sans` | Crimson Pro | Georgia, serif |
+| `--font-mono` | DM Mono | Courier New, monospace |
 
-| Level | Size | Weight | Tracking | Use |
-|-------|------|--------|----------|-----|
-| Display | 28px | 600 | -0.02em | Page titles — "The Pass", "Kitchen" |
-| Heading | 20px | 600 | -0.01em | Section headers — "Appetizers", "Main Plates" |
-| Subheading | 16px | 500 | 0 | Card titles — item names |
-| Body | 14px | 400 | 0 | Primary content, descriptions |
-| Label | 12px | 500 | 0.01em | Field labels, category tags |
-| Data | 14px / mono | 400 | 0 | Prices, quantities — `tabular-nums`, monospace for alignment |
-| Caption | 11px | 400 | 0.02em | Timestamps, metadata |
+Body defaults: `font-family: 'Crimson Pro'`, `font-size: 16px`, `line-height: 1.55`.
+
+| Level | Size | Weight | Tracking | Font | Use |
+|-------|------|--------|----------|------|-----|
+| Display | 42px | 600 | -0.03em | Cormorant Garamond | Page titles — "Kitchen", "The Pass" |
+| Section title | 32px | — | — | Cormorant Garamond | Event name in Pass summary |
+| Heading | 20px | 600 | — | Crimson Pro | Card titles, item names |
+| Body | 16px | 400 | — | Crimson Pro | Primary content, descriptions |
+| Station label | 11px | — | 0.12em | Crimson Pro | Uppercase section headers |
+| Table header | 11px | — | uppercase | Crimson Pro | Ingredient table column labels |
+| Data | mono | 400 | — | DM Mono | Prices, quantities — `tabular-nums` |
 
 ## Border Radius
 
-| Element | Radius |
-|---------|--------|
-| Buttons | 6px |
-| Cards / tickets | 8px |
-| Inputs | 6px |
-| Modals | 12px |
-| Tags / badges | 4px |
+| Token | Value | Element |
+|-------|-------|---------|
+| `--radius-button` | `4px` | Buttons |
+| `--radius-card` | `6px` | Cards, ticket cards |
+| `--radius-input` | `4px` | Input fields |
+| `--radius-modal` | `8px` | Modals |
+| `--radius-badge` | `3px` | Source badges, status tags |
+
+shadcn/ui `--radius` global override: `0.375rem` (6px), matching `--radius-card`.
 
 ## Components
 
 ### Ticket Card (core component)
 
-The fundamental unit — represents one menu item moving through the kitchen.
+The fundamental unit — represents one menu item moving through the kitchen. Used in both KitchenView and PassView.
 
-- Surface: `--bg-surface-raised` with shadow level 1
-- Border: `--border-subtle`, 1px
-- Radius: 8px
-- Padding: 16px
-- **Header:** Item name (subheading weight) + category tag (label, `--border-subtle` bg)
-- **Body:** Ingredient list or status depending on view
-- **Footer:** Cost or progress indicator
-- **States:**
-  - Pending: neutral border, muted text
-  - Processing: left border accent (`--accent`, 3px)
-  - Completed: left border success (`--status-success`, 3px)
-  - Failed: left border error (`--status-error`, 3px)
+- Background: `--color-surface-raised`
+- Border: `--color-border-subtle`, 1px; `--radius-card`
+- Shadow: `--shadow-md`
+- **Left border accent** (3–4px) encodes status:
+  - Pending / active: `--color-copper`
+  - Completed: `--color-success`
+  - Failed / 86'd: `--color-error`
+- Content padding: `p-5` (CardContent)
+- Item name as subheading (Crimson Pro, 16px+)
+- Ingredient count and cost in DM Mono
+
+### Line Item Card (PassView)
+
+Expandable ticket card for the final quote.
+
+- Collapsed: item name + total cost, left border by status
+- Expanded: ingredient table with columns — Ingredient, Qty, Unit Cost, Source, Catalog #
+- Click target: full header row `px-6 py-5`
+- Table header: `px-5 py-3`, 11px uppercase tracking
+- Table cells: `px-5 py-3`, DM Mono for all numbers
+- AnimatePresence controls expand/collapse transition
+
+### Counter Card (KitchenView)
+
+Four cards across the top: TOTAL ITEMS, IN PROGRESS, COMPLETED, FAILED.
+
+- Background: `--color-surface-raised`
+- Border: `--color-border-subtle`
+- Radius: `rounded-lg`
+- Padding: `px-5 py-4`
+- Count in display font; label in 11px uppercase tracking
+- IN PROGRESS: copper accent; COMPLETED: success; FAILED: error
 
 ### Source Badge
 
-Inline indicator for ingredient match quality.
+Inline indicator for ingredient match quality. Uses shadcn Badge, customized via CSS tokens.
 
 | Source | Background | Text | Label |
 |--------|-----------|------|-------|
-| `sysco_catalog` | `--status-success-subtle` | `--status-success` | "Catalog" |
-| `estimated` | `--status-warning-subtle` | `--status-warning` | "Estimated" |
-| `not_available` | `--status-error-subtle` | `--status-error` | "86'd" |
+| `sysco_catalog` | `--color-success-subtle` | `--color-success-text` | "Catalog" |
+| `estimated` | `--color-warning-subtle` | `--color-warning-text` | "Estimated" |
+| `not_available` | `--color-error-subtle` | `--color-error-text` | "86'd" |
+| Radius: `--radius-badge` (3px) |
 
-### Station Headers
+### Connection Pill (KitchenView)
 
-In the Kitchen view, stations label the ticket rail columns:
+Fixed `bottom-6 right-6`. Shows SSE connection status — small pill with colored dot and label. Floats above all content.
 
-- **Prep** (decomposing) — icon: knife
-- **Match** (resolving) — icon: search
-- **Done** (completed) — icon: check
-- **86'd** (failed) — icon: x
+### Form Fields (SubmitView)
 
-Typography: Label size, uppercase, `--text-tertiary`. Subtle, not shouty.
+shadcn Input / Textarea components. Background: `--color-inset`. Border: `--color-border-default`. Focus ring: `--shadow-copper`. Groups use `space-y-3` (label above input).
 
 ## Views
 
 ### 1. Submit View
 
-Clean form. Feels like writing a prep list.
+A centered card on the dark canvas. Feels like writing a prep list under a single overhead light.
 
-- Textarea or JSON upload for menu spec
-- Event details (name, date, venue, guest count) as simple fields
-- Single copper CTA: "Start Quote"
-- Minimal — no sidebar, no nav complexity
+- Layout: `min-h-screen flex items-center justify-center`
+- Card: `max-w-xl`, `bg-surface-raised`, `border-border-subtle`, `shadow-lg`
+- Copper top border: `border-t-2 border-copper` — the only color accent on entry
+- Internal padding: `px-12 pb-12 pt-10`
+- Two fieldset sections: **EVENT DETAILS** and **MENU SPEC**, separated by a `Separator` with a copper dot
+- Grid: `grid-cols-[1.5fr_1fr] gap-x-5 gap-y-6` for event detail fields
+- CTA: full-width copper button, uppercase, tracked label — "Start Quote"
+- Motion: `fadeUp` on card entry
 
 ### 2. Kitchen View (live progress)
 
-The ticket rail. Items flow through stations.
+Full-bleed dark canvas. The ticket rail in motion.
 
-- **Layout:** Columns for each station (Prep → Match → Done), or a single list with status indicators if column layout is too complex for prototype
-- **Ticket cards** move between stations as SSE events arrive
-- **Live counters** at top: total items, in progress, completed, failed
-- Processing items show the copper left-border accent
-- Completed items show ingredient count + cost summary
+- Sticky header: `border-b border-border-subtle`, content `max-w-[1200px] mx-auto px-8 pt-12 pb-8`
+- Page title: `font-display text-[42px] font-semibold tracking-[-0.03em]`
+- 4 counter cards below the title
+- Main content: `max-w-[1200px] px-8 pt-10 pb-16`, `gap-10` between stations
+- Station sections: 11px uppercase label + `flex-wrap gap-4` of ticket cards
+- Ticket cards enter via `ticketArrive` (slide from left); stations via staggered `fadeUp`
+- AnimatePresence handles card entry/exit as SSE events update state
+- Connection pill fixed bottom-right
 
 ### 3. The Pass View (quote)
 
-Final inspection. Polished output.
+Final inspection. Full-bleed canvas with a contained content column.
 
-- **Summary header:** Event name, date, total items, total cost
-- **Line items:** Expandable cards — collapsed shows item name + cost, expanded shows full ingredient table
-- **Ingredient table:** Name, quantity, unit cost, source badge, catalog item number
-- **Export:** Copy JSON or download — single action
-- Items with `not_available` ingredients are flagged but not hidden
+- Layout: `px-8 pt-12 pb-20`, content `max-w-[900px] mx-auto gap-8`
+- Summary card: `bg-surface-raised shadow-lg px-8 py-8`
+  - Event name: `font-display text-[32px]`
+  - Date, guests, venue: `text-secondary`
+  - Separator + stats row: total items (copper), catalog matches (success), estimated (warning), unavailable (error)
+- Line items section: uppercase label + `flex-col gap-3`
+- Export button: copper `outline` variant — secondary action, not primary
+- Motion: `fadeUp` on sections; AnimatePresence on each card expand/collapse
 
 ## Animation
 
-| Type | Duration | Easing |
-|------|----------|--------|
-| Micro (hover, focus) | 150ms | ease-out |
-| Card transitions | 200ms | ease-out |
-| Station movement | 250ms | ease-in-out |
+All complex enter/exit animations use the `motion` library (Framer Motion), not CSS transitions.
 
-No spring/bounce. Professional kitchen — smooth, efficient movements.
+| Keyframe | Behavior | Use |
+|----------|----------|-----|
+| `fadeUp` | Opacity 0→1, translateY 16px→0 | Page sections, card entry |
+| `revealCard` | Opacity 0→1, scale 0.96→1 | Cards scaling in |
+| `ticketArrive` | Opacity 0→1, translateX -12px→0 | Ticket cards sliding in from left |
+| `copperPulse` | Copper accent border opacity oscillation | Active processing indicator |
+| `breathe` | Scale 1→1.015→1 | Subtle living element |
+| `spinSlow` | 360° rotation | Loading spinners |
+
+No bounce or spring. Professional kitchen — smooth, efficient movements.
 
 ## Patterns to Remember
 
-- **Left-border accent** on cards = processing state. Consistent everywhere.
-- **Source badges** always use the same three-color system. Never ad-hoc status colors.
-- **Copper is precious** — only for primary actions and active processing. Not decoration.
-- **Data alignment** — prices and quantities use `tabular-nums` monospace. Always right-aligned.
-- **Kitchen vocabulary** in UI labels where natural: "86'd" not "unavailable", "The Pass" not "Results".
+- **Dark-only theme** — no light mode, no `.dark` block. shadcn/ui tokens are overridden globally at `:root`, never inside `.dark`.
+- **Copper is the sole accent** — primary actions, active states, focus rings. Not decoration. Never applied gratuitously.
+- **Left-border accent on cards = status** — copper for pending/active, success green for completed, error red for failed. Consistent in both KitchenView and PassView.
+- **Source badges: 3-color system** — Catalog (success), Estimated (warning), 86'd (error). Never ad-hoc status colors.
+- **All prices and quantities in DM Mono** with `tabular-nums`. Always.
+- **Grain texture + vignette** on `body` via pseudo-elements — adds tactile depth without imagery.
+- **shadcn/ui as the component base** — customized entirely via CSS tokens. No component-level inline style overrides.
+- **motion library for enter/exit animations** — CSS transitions only for simple hover/focus state changes (150ms ease-out).
+- **Kitchen vocabulary in UI labels** — "86'd" not "Unavailable", "The Pass" not "Results", "Kitchen" not "Dashboard", "Ticket" not "Item card".
