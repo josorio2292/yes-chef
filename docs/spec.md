@@ -118,6 +118,8 @@ At each stage transition, results are persisted to the `step_data` JSON column o
 
 This prevents expensive LLM calls from being re-run after transient failures.
 
+**Startup recovery:** On server start, the FastAPI lifespan hook queries for all quotes with `status='processing'` and resumes each one via `asyncio.create_task()`. Recovery is non-blocking — the server is ready immediately and stalled quotes resume in the background. DB errors during the recovery scan are caught and logged without preventing startup.
+
 ---
 
 ## SSE Event System

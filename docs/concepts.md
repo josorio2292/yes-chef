@@ -260,6 +260,12 @@ ingredient_name
 | `completed` | Skip entirely |
 | `failed` | Skip entirely (requires manual retry) |
 
+### Startup recovery
+
+On server start, the FastAPI lifespan hook queries for all `Quote` rows with `status='processing'` — quotes whose background task was cut short by a crash or restart — and re-fires `process_quote()` for each one via `asyncio.create_task()`. Recovery is non-blocking: the server reports healthy immediately and stalled quotes resume behind the scenes using the standard checkpoint logic above. DB errors during the recovery scan are caught and logged so a corrupted quote never blocks the server from starting.
+
+Clients already connected to an SSE stream will not receive a replay of events emitted before the restart, but they will receive fresh events as the resumed quote progresses through each checkpoint.
+
 ### Why this matters
 
 LLM calls cost money and time:
@@ -305,7 +311,7 @@ KitchenView uses a hybrid approach:
 
 ### Trade-offs
 
-- **In-memory**: Events lost on server restart (no replay/catch-up)
+- **In-memory**: Events lost on server restart (no replay/catch-up). Quotes that were processing at restart time are automatically resumed by the startup recovery hook; clients will receive fresh SSE events from the resumed checkpoint onwards, but will not see events emitted before the restart.
 - **No backpressure**: Queue grows unbounded if client is slow
 - **Single server**: EventBus doesn't work across multiple API instances
 - **Good enough for**: Real-time UI feedback during active processing

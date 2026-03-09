@@ -255,6 +255,9 @@ Each menu item moves through two steps with a checkpoint after each.
     - **"pending" / "decomposing"** → restarts decomposition.
     - **"resolving"** → restarts resolve. Individual ingredient results are lost (held in memory until final checkpoint), BUT the global cache preserves mappings written before interruption. On restart, these hit the zero-cost fast path. Only un-cached ingredients need fresh agent calls.
 
+- **StartupRecovery:**
+  - On server start, the FastAPI lifespan hook queries for all quotes with `status='processing'` and resumes each one via `asyncio.create_task()`. Recovery is non-blocking — the server becomes ready immediately and processes stalled quotes in the background. DB errors during the recovery scan are caught and logged; a failing recovery does not prevent startup.
+
 - **ItemIsolation:**
   - Each item runs independently. A failure on item N does not affect any other item.
 
@@ -665,3 +668,5 @@ All identified risks have been derisked:
 
 1. **Re-ingestion during live traffic** — if `ingest("sysco")` runs while jobs are actively searching, there is a window where old rows are soft-deleted but new rows aren't yet upserted. Is this acceptable for the prototype? (Likely yes — prototype runs single-user.)
 2. **Startup behavior when catalog is empty** — if `has_embeddings()` returns False at startup, does the API block until `ingest()` completes, or reject job submissions until the catalog is ready? Current implementation blocks startup.
+
+*Resolved:* **Startup recovery for stalled quotes** — previously an open question about quotes left in `"processing"` after a crash. Now addressed: the lifespan hook queries for `status='processing'` quotes on startup and resumes each as a background task.
